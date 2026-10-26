@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+  - packages/*
+
+# pnpm 11：构建脚本白名单，允许 esbuild 安装平台二进制
+allowBuilds:
+  esbuild: true
+
+# 本项目为内部小工具，不因 peerDependencies 警告中断安装
+strictPeerDependencies: false

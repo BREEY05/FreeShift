@@ -1,0 +1,44 @@
+name: freeshift
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: deploy/api.Dockerfile
+    image: freeshift-api:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_PATH: /data/freeshift.db
+      PORT: "3000"
+      HOST: 0.0.0.0
+      TZ: Asia/Shanghai
+      LOG_LEVEL: info
+    volumes:
+      - freeshift-data:/data
+      - freeshift-backups:/backups
+    expose:
+      - "3000"
+    mem_limit: 384m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/web.Dockerfile
+    image: freeshift-web:latest
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    mem_limit: 96m
+
+volumes:
+  freeshift-data:
+  freeshift-backups:

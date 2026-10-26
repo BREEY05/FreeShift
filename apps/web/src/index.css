@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --fs-canvas: #f6f7f9;
+  --fs-surface: #ffffff;
+  --fs-line: #e6e8ec;
+  --fs-ink: #1c1f23;
+  --fs-muted: #6b7280;
+  --fs-subtle: #9ca3af;
+  --fs-brand: #4f46e5;
+  --fs-brand-hover: #4338ca;
+  --fs-brand-soft: #eef2ff;
+  --fs-mint: #0f766e;
+  --fs-amber: #b45309;
+  --fs-danger: #b91c1c;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-sm text-ink antialiased;
+    min-height: 100vh;
+  }
+
+  ::selection {
+    background: var(--fs-brand-soft);
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--fs-brand);
+    outline-offset: 2px;
+  }
+
+  button {
+    @apply cursor-pointer;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #d5d8de transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #d5d8de;
+    border-radius: 999px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}

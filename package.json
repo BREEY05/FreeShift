@@ -1,0 +1,17 @@
+{
+  "name": "freeshift",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.28.5",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @freeshift/server --filter @freeshift/web dev",
+    "dev:server": "pnpm --filter @freeshift/server dev",
+    "dev:web": "pnpm --filter @freeshift/web dev",
+    "build": "pnpm --filter @freeshift/shared build && pnpm --filter @freeshift/web build",
+    "typecheck": "pnpm --filter @freeshift/shared build && pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "seed": "pnpm --filter @freeshift/server seed"
+  }
+}
