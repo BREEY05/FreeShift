@@ -91,6 +91,10 @@ docker compose ps
 
 默认访问 http://<服务器IP>:8080 （可用 WEB_PORT=80 docker compose up -d 修改端口）。
 
+> 部署前建议先做服务器体检：[docs/SERVER-CHECK.md](docs/SERVER-CHECK.md)（含给 AI 助手的检查提示词），或直接运行 `bash scripts/server-check.sh`。
+> 若服务器无法访问 Docker Hub 或内存较小，可用无 Docker 的原生部署：[docs/DEPLOY-NATIVE.md](docs/DEPLOY-NATIVE.md)；给服务器 AI 助手的执行提示词见 [docs/DEPLOY-PROMPT.md](docs/DEPLOY-PROMPT.md)。
+> 需要子域名 + HTTPS：见 [docs/DEPLOY-SUBDOMAIN.md](docs/DEPLOY-SUBDOMAIN.md)。
+
 - 两个服务：api（Node 24，SQLite 数据卷）+ web（Nginx，静态资源与 /api 反代）。
 - 数据持久化在命名卷 freeshift-data，备份卷 freeshift-backups。
 - 内存限制：api 384M、web 96M，适配 2G 内存小机器。

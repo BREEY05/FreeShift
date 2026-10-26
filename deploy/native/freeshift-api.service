@@ -1,0 +1,26 @@
+[Unit]
+Description=FreeShift API (Node 24 + SQLite)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/freeshift
+Environment=NODE_ENV=production
+Environment=PORT=3100
+Environment=HOST=127.0.0.1
+Environment=TZ=Asia/Shanghai
+Environment=DATABASE_PATH=/data/freeshift/freeshift.db
+Environment=LOG_LEVEL=info
+ExecStart=/opt/node24/bin/node apps/server/src/index.ts
+Restart=always
+RestartSec=3
+MemoryMax=384M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
