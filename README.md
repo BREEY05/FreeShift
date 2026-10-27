@@ -8,6 +8,14 @@ FreeShift 让一群人各自登记自己的占用（课程 / 上班 / 其他安�
 
 ---
 
+## 在线使用与离线下载
+
+- 在线版：https://freeshift.ainavi.online （无需登录）
+- [Windows 本地离线版 v1.0.0 下载](https://github.com/BREEY05/FreeShift/releases/download/v1.0.0/freeshift-local-1.0.0.zip)
+- [Release 页面与校验信息](https://github.com/BREEY05/FreeShift/releases/tag/v1.0.0)
+
+离线包已附带应用依赖。首次使用需要单独准备 Windows 便携版 Node 24，将其放在解压目录的 node 文件夹内，确保存在 node/node.exe，然后双击 start.bat。此后可断网使用，数据保存在本地。详见 [本地版使用说明](docs/LOCAL-OFFLINE.md)。
+
 ## 界面预览
 
 | 总览：按周次聚合空闲（热力格 + 筛选） | 点格子查看空闲/占用名单 |
