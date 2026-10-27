@@ -19,12 +19,12 @@
 - 现有证书只覆盖 ainavi.online / www.ainavi.online，不包含子域名，所以必须用 certbot 新签。
 
 三、硬性约束（必须遵守）
-1. 只允许改动：/opt/freeshift（代码）、/data/freeshift（数据与备份）、/opt/node24（独立 Node 24）、/etc/systemd/system/freeshift-api.service、/etc/nginx/conf.d/freeshift.conf、/etc/nginx/freeshift.htpasswd、/var/www/letsencrypt、ubuntu 用户 crontab；apt 只允许安装 certbot。
+1. 只允许改动：/opt/freeshift（代码）、/data/freeshift（数据与备份）、/opt/node24（独立 Node 24）、/etc/systemd/system/freeshift-api.service、/etc/nginx/conf.d/freeshift.conf、/var/www/letsencrypt、ubuntu 用户 crontab；apt 只允许安装 certbot。
 2. 绝对不要改动现有 80/443 站点配置、/var/www 下其他站点、MySQL、SSH 配置；不要动系统 node；不要重启服务器。
 3. 不安装 Docker；Node 24 只解压到 /opt/node24，不写 /usr/local、不改 alternatives。
 4. 不要修改云厂商安全组与 DNS（我在控制台做）；你只在服务器本地验证。
 5. 每次改 Nginx 配置前先备份 /etc/nginx/conf.d 到 /root/nginx-conf.d.bak-<时间戳>；nginx -t 不通过就立即恢复备份并停止后续步骤。
-6. 不要把密码、私钥写进日志或聊天记录；最终凭据写入 /root/freeshift-credentials.txt（chmod 600），报告里只告诉我用户名和文件位置。
+6. 本项目不需要登录，禁止添加 Basic Auth、禁止启 auth_basic、不要创建 htpasswd 与密码文件；不要把私钥写进日志或聊天记录。
 7. 遇到不确定的选择先问我，不要猜；失败时保留现场、把关键日志行发我，不要反复重试、不要杀别的服务。
 
 四、开工前预检（先只做这一步，报告后等我确认）
@@ -32,7 +32,7 @@ a) git ls-remote --heads https://github.com/BREEY05/FreeShift.git；能拉到 ma
 b) df -h / ; free -h ; swapon --show ; nginx -v ; ls /etc/nginx/conf.d/ /etc/nginx/sites-enabled/
 c) 确认 8080 空闲（ss -lntp | grep 8080）、/opt/freeshift 与 /data/freeshift 不存在或为空（已存在就停，不要覆盖）。
 d) dig +short freeshift.ainavi.online，确认已解析到本机公网 IP；没解析就停下让我添加 A 记录（类型 A、主机记录 freeshift、值 服务器公网 IP、TTL 600；域名若在 Cloudflare，先临时切灰云 DNS only）。
-e) 问我：要不要写 5 位成员的演示数据（默认不写）；Basic Auth 用户名默认 freeshift，密码我下一步给你或你自动生成。
+e) 问我：要不要写 5 位成员的演示数据（默认不写）。本项目不需要登录，不要准备任何密码或 htpasswd。
 
 五、执行步骤
 
@@ -75,18 +75,12 @@ curl -s http://127.0.0.1:3100/healthz
 第 4 步：演示数据（仅当我选“是”）
 cd /opt/freeshift && DATABASE_PATH=/data/freeshift/freeshift.db /opt/node24/bin/node apps/server/src/db/seed.ts
 
-第 5 步：Basic Auth
+第 5 步：静态资源权限（本项目无登录，跳过 Basic Auth）
 sudo cp -a /etc/nginx/conf.d /root/nginx-conf.d.bak-$(date +%Y%m%d%H%M%S)
-AUTH_USER=freeshift
-AUTH_PASS=$(openssl rand -hex 12)
-sudo AUTH_USER="$AUTH_USER" AUTH_PASS="$AUTH_PASS" sh -c 'printf "%s:%s\n" "$AUTH_USER" "$(openssl passwd -apr1 "$AUTH_PASS")" > /etc/nginx/freeshift.htpasswd'
-sudo chown root:www-data /etc/nginx/freeshift.htpasswd && sudo chmod 640 /etc/nginx/freeshift.htpasswd
-sudo AUTH_USER="$AUTH_USER" AUTH_PASS="$AUTH_PASS" sh -c 'printf "url=https://freeshift.ainavi.online\nuser=%s\npass=%s\n" "$AUTH_USER" "$AUTH_PASS" > /root/freeshift-credentials.txt'
-sudo chmod 600 /root/freeshift-credentials.txt
-unset AUTH_PASS
 sudo chmod -R o+rX /opt/freeshift/apps/web/dist
 sudo chmod o+x /opt/freeshift /opt/freeshift/apps
 sudo -u www-data test -r /opt/freeshift/apps/web/dist/index.html && echo www-data-readable-ok
+不要创建 /etc/nginx/freeshift.htpasswd，不要在 freeshift.conf 里写 auth_basic。
 
 第 6 步：先只放 80 端口验证块，再用 certbot 签发
 sudo apt-get update && sudo apt-get install -y certbot
@@ -112,15 +106,14 @@ sudo nginx -t && sudo systemctl reload nginx
 
 第 8 步：验收（逐条把结果贴给我）
 curl -sI http://freeshift.ainavi.online/ | head -3                                              # 期望 301
-curl -sI https://freeshift.ainavi.online/ | head -5                                             # 期望 401
-curl -s -o /dev/null -w '%{http_code}\n' -u freeshift:<密码> https://freeshift.ainavi.online/   # 期望 200
-curl -s -u freeshift:<密码> https://freeshift.ainavi.online/api/v1/semester | head -c 300        # 期望 totalWeeks 20
-curl -sI https://freeshift.ainavi.online/api/v1/meta | head -3                                  # 期望 401
+curl -s -o /dev/null -w '%{http_code}\n' https://freeshift.ainavi.online/                      # 期望 200（无需任何认证）
+curl -s https://freeshift.ainavi.online/api/v1/semester | head -c 300                            # 期望 totalWeeks 20，无需认证
+curl -s -o /dev/null -w '%{http_code}\n' https://freeshift.ainavi.online/api/v1/meta             # 期望 200
 echo | openssl s_client -connect freeshift.ainavi.online:443 -servername freeshift.ainavi.online 2>/dev/null | openssl x509 -noout -subject -dates -ext subjectAltName
 ss -lntp | grep -E ':80 |:443 |:8080 |:3100 '
 sudo certbot renew --dry-run
 systemctl show freeshift-api -p MemoryCurrent
-期望：301 / 401 / 200、totalWeeks=20、证书 SAN 含该子域名、80 与 443 由 nginx 监听、8080 无监听、3100 只监听 127.0.0.1。
+期望：301 / 200 / 200、totalWeeks=20、证书 SAN 含该子域名、80 与 443 由 nginx 监听、8080 无监听、3100 只监听 127.0.0.1。浏览器直接打开 https://freeshift.ainavi.online 应无任何登录框。
 
 第 9 步：备份 cron（幂等）
 ( crontab -l 2>/dev/null | grep -v 'freeshift/scripts/backup.mjs' ; echo "30 3 * * * cd /opt/freeshift && DATABASE_PATH=/data/freeshift/freeshift.db BACKUP_DIR=/data/freeshift/backups /opt/node24/bin/node scripts/backup.mjs 7 >> /data/freeshift/backup.log 2>&1" ) | crontab -
@@ -131,7 +124,7 @@ ls -lh /data/freeshift/backups
 六、报告要求
 1. 状态表：Node / 服务 / Nginx / API / HTTPS / 证书 / 数据库 / 备份，逐项 OK 或失败原因。
 2. 证书：来源、到期日期、续期方式（certbot timer 是否存在、dry-run 结果）。
-3. 凭据：用户名 + /root/freeshift-credentials.txt 位置（不要贴完整密码）。
+3. 确认无登录：浏览器打开无 Basic Auth 弹窗，curl 不带凭据返回 200。
 4. 常用命令：重启服务、看日志、更新代码、手动备份。
 5. 资源占用：MemoryCurrent、磁盘增量。
 6. 需要我在控制台做的事：Cloudflare 若切过灰云要改回橙云并把 SSL 模式设为 Full (strict)；安全组关闭 8080；观察 1~2 天后再启用 HSTS；建议关掉 SSH 密码登录。

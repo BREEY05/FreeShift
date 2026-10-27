@@ -14,3 +14,4 @@ data/
 .tmp-*.mjs
 .tmp-*.ts
 freeshift.tgz
+dist-local/
