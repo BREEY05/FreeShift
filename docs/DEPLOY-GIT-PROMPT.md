@@ -36,17 +36,20 @@ e) 问我：要不要写 5 位成员的演示数据（默认不写）；Basic Au
 
 五、执行步骤
 
-第 1 步：安装独立 Node 24（不覆盖系统 node）
+第 1 步：安装独立 Node 24（固定版本，不取 latest，不覆盖系统 node）
+先确认镜像上有没有这个确切版本：
+curl -fsI https://npmmirror.com/mirrors/node/v24.11.0/node-v24.11.0-linux-x64.tar.xz | head -1
+若返回 200 就按下面执行；返回 404 不要自己挑最新版，把可用的 v24.x 版本列表发我（优先 v24.10.0 / v24.11.0），等我确认。
 mkdir -p /tmp/freeshift-setup && cd /tmp/freeshift-setup
-F=$(curl -fsSL https://npmmirror.com/mirrors/node/latest-v24.x/ | grep -o 'node-v24\.[0-9.]*-linux-x64\.tar\.xz' | head -1)
-echo "file=$F"
-curl -fLO "https://npmmirror.com/mirrors/node/latest-v24.x/$F" || curl -fLO "https://nodejs.org/dist/latest-v24.x/$F"
+F=node-v24.11.0-linux-x64.tar.xz
+curl -fLO "https://npmmirror.com/mirrors/node/v24.11.0/$F" || curl -fLO "https://nodejs.org/dist/v24.11.0/$F"
 sudo mkdir -p /opt/node24 && sudo tar -xJf "$F" -C /opt/node24 --strip-components=1
 sudo chown -R ubuntu:ubuntu /opt/node24
-/opt/node24/bin/node -v
+/opt/node24/bin/node -v          # 必须精确输出 v24.11.0
 /opt/node24/bin/node -e "const {DatabaseSync}=require('node:sqlite');new DatabaseSync(':memory:');console.log('sqlite-ok')"
 /opt/node24/bin/npm install -g pnpm@11.28.5
-/opt/node24/bin/pnpm -v
+/opt/node24/bin/pnpm -v          # 必须精确输出 11.28.5
+不要用 apt 装 nodejs，不要写 /usr/local，不要改 alternatives，不要改全局默认 node：系统 node 必须保持 v20.20.2 供现有站点使用。/opt/node24 只通过 PATH 前缀与 systemd ExecStart 绝对路径使用。
 两种下载源都失败就停止并告诉我，绝对不要用系统 node 顶替。
 
 第 2 步：拉代码并构建
