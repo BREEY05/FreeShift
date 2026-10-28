@@ -3,7 +3,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { CalendarDays, Loader2, LogOut } from 'lucide-react';
 import { authApi, type AuthSession } from './api';
 import { LoginScreen } from './LoginScreen';
+import { SessionProvider, roleLabel } from './session';
 import './auth.css';
+
+const SIGNED_OUT: AuthSession = { enabled: true, email: null, role: null };
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
@@ -19,7 +22,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     const expire = () => {
       revision.current += 1;
-      setSession({ enabled: true, email: null });
+      setSession(SIGNED_OUT);
       setChecking(false);
       setError('');
       setNotice('登录已过期，请重新验证邮箱。');
@@ -52,7 +55,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     try {
       await authApi.logout();
       revision.current += 1;
-      setSession({ enabled: true, email: null });
+      setSession(SIGNED_OUT);
       setNotice('你已安全退出。再次登录时，请验证邮箱。');
       queryClient.clear();
     } catch (err) {
@@ -71,10 +74,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
     </main>
   );
   if (!session || (session.enabled && !session.email)) return <LoginScreen notice={notice} onAuthenticated={result => { revision.current += 1; queryClient.clear(); setError(''); setNotice(''); setSession(result); }} />;
+
+  const current = session;
+  const isAdmin = current.enabled && current.role === 'admin';
   return (
-    <>
-      {session.enabled && <div className="fs-auth-account" aria-label="当前账户"><span className="fs-auth-account-dot" /><span className="fs-auth-account-email" title={session.email || undefined}>{session.email}</span><button onClick={() => void logout()} disabled={loggingOut}><LogOut size={13} aria-hidden />{loggingOut ? '正在退出…' : '退出登录'}</button>{error && <span role="alert" className="fs-auth-account-error">{error}</span>}</div>}
+    <SessionProvider value={{ session: current, isAdmin }}>
+      {current.enabled && <div className="fs-auth-account" aria-label="当前账户"><span className="fs-auth-account-dot" /><span className="fs-auth-account-email" title={current.email || undefined}>{current.email}</span><span className={'fs-auth-account-role' + (isAdmin ? ' is-admin' : '')}>{roleLabel(current.role)}</span><button onClick={() => void logout()} disabled={loggingOut}><LogOut size={13} aria-hidden />{loggingOut ? '正在退出…' : '退出登录'}</button>{error && <span role="alert" className="fs-auth-account-error">{error}</span>}</div>}
       {children}
-    </>
+    </SessionProvider>
   );
 }
+
+/** 登录页与状态页复用同一套反馈样式 */
+export type { AuthSession };

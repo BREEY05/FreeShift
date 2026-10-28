@@ -78,9 +78,13 @@ CREATE INDEX IF NOT EXISTS ix_occ_schedule ON schedule_occurrence(schedule_id);
 CREATE INDEX IF NOT EXISTS ix_occ_user_week ON schedule_occurrence(semester_id, user_id, week_no);
 
 -- Authentication identities are independent of shared scheduling users.
+-- 只有被管理员加入白名单的邮箱才能收到验证码并登录（授权 = 已注册 + 已验证）。
 CREATE TABLE IF NOT EXISTS auth_account (
   email TEXT PRIMARY KEY,
-  created_at INTEGER NOT NULL
+  role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
+  created_at INTEGER NOT NULL,
+  added_by TEXT,
+  last_login_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS auth_otp (
   email TEXT PRIMARY KEY,

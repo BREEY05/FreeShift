@@ -55,6 +55,12 @@
 .fs-auth-account button { display: flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 6px; border-radius: 4px; }
 .fs-auth-account button:hover { color: var(--fs-brand); background: var(--fs-brand-soft); }
 .fs-auth-account-error { color: var(--fs-danger); }
+.fs-auth-account-role { padding: 2px 6px; border-radius: 4px; background: var(--fs-canvas); color: var(--fs-muted); font-size: 10px; font-weight: 500; }
+.fs-auth-account-role.is-admin { background: var(--fs-brand-soft); color: var(--fs-brand); }
+.fs-auth-denied { margin-top: 14px; padding: 14px 15px; border: 1px solid #fcd9d9; border-radius: 10px; background: #fef7f7; color: var(--fs-danger); font-size: 12px; line-height: 1.85; }
+.fs-auth-denied-head { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; font-size: 13px; }
+.fs-auth-denied code { padding: 1px 5px; border-radius: 4px; background: #ffffff; color: var(--fs-ink); font-size: 11px; overflow-wrap: anywhere; }
+.fs-auth-denied-hint { margin-top: 6px; color: var(--fs-muted); font-size: 11px; }
 @keyframes fs-auth-enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 900px) { .fs-auth-layout { gap: 32px; grid-template-columns: minmax(0, 1fr) 380px; } .fs-auth-card { padding: 30px 25px 25px; } .fs-auth-story h1 { font-size: 38px; } .fs-auth-eyebrow { font-size: 8px; letter-spacing: 1px; } .fs-auth-cell-5 { font-size: 0; } }
 @media (max-width: 700px) { .fs-auth-page { padding: 24px 20px; } .fs-auth-layout { grid-template-columns: minmax(0, 1fr); gap: 25px; padding: 38px 0; width: 100%; max-width: 420px; margin: auto; } .fs-auth-story h1 { font-size: 31px; margin: 0 0 13px; letter-spacing: -1px; } .fs-auth-story h1 br { display: none; } .fs-auth-story > p { font-size: 12px; } .fs-auth-eyebrow, .fs-auth-schedule { display: none; } .fs-auth-card { border-radius: 16px; padding: 28px 23px 24px; } .fs-auth-footer { font-size: 9px; } .fs-auth-footer > span:last-child { display: none; } .fs-auth-account { padding: 4px 12px; } }

@@ -66,11 +66,15 @@ export default function DashboardPage() {
   const dragRef = useRef<{ active: boolean; mode: 'add' | 'remove' } | null>(null);
 
   const boardWeek = board?.week;
-  const currentWeek = semesterWeeks.find((week) => week.isCurrent)?.weekNo ?? 1;
+  /** 真实世界的当前周；学期已过 / 未开始时取最近的边界周（与后端 resolveWeek 保持一致） */
+  const currentWeek =
+    semesterWeeks.find((week) => week.isCurrent)?.weekNo ??
+    (semesterWeeks.length > 0 ? semesterWeeks[semesterWeeks.length - 1]!.weekNo : 1);
   const displayWeek =
     boardWeek ??
     (weekParam !== null ? semesterWeeks.find((week) => week.weekNo === weekParam) : undefined) ??
     semesterWeeks.find((week) => week.isCurrent) ??
+    semesterWeeks[semesterWeeks.length - 1] ??
     semesterWeeks[0];
   const weekNo = boardWeek?.weekNo ?? displayWeek?.weekNo ?? null;
 

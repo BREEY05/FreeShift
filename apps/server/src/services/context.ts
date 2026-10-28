@@ -1,5 +1,5 @@
 import type { AppUser, Semester, TimeSlot, WeekInfo } from '@freeshift/shared';
-import { buildWeeks } from '@freeshift/shared';
+import { buildWeeks, todayIso } from '@freeshift/shared';
 import { all, get } from '../db/index.ts';
 import { AppError, notFound } from '../lib/errors.ts';
 import type { SemesterRow, SlotRow, UserRow } from '../lib/mappers.ts';
@@ -43,12 +43,30 @@ export function getUserById(id: number): AppUser {
   return mapUser(row);
 }
 
+/**
+ * 解析要展示的周次。
+ * - 显式传入 weekNo 时严格校验，越界报 422；
+ * - 未传入时优先取"真实世界的当前周"；当前日期落在学期之外（假期 / 学期已过）时，
+ *   取最近的边界周（学期未开始取第 1 周，已结束取最后一周），而不是固定回落到第 1 周。
+ */
 export function resolveWeek(semester: Semester, weekNo?: number | null): WeekInfo {
   const weeks = buildWeeks(semester);
-  const target = weekNo ?? weeks.find((week) => week.isCurrent)?.weekNo ?? 1;
-  const found = weeks[target - 1];
+  if (weeks.length === 0) {
+    throw new AppError(422, 'INVALID_WEEK', '学期还没有任何周次');
+  }
+  if (weekNo === null || weekNo === undefined) {
+    const current = weeks.find((week) => week.isCurrent);
+    if (current) return current;
+    const today = todayIso();
+    const first = weeks[0];
+    const last = weeks[weeks.length - 1];
+    if (today < first.startDate) return first;
+    if (today > last.endDate) return last;
+    return first;
+  }
+  const found = weeks[weekNo - 1];
   if (!found) {
-    throw new AppError(422, 'INVALID_WEEK', '周次超出范围：' + target);
+    throw new AppError(422, 'INVALID_WEEK', '周次超出范围：' + weekNo);
   }
   return found;
 }

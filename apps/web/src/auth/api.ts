@@ -1,10 +1,13 @@
+export type AuthRole = 'admin' | 'member';
+
 export interface AuthSession {
   enabled: boolean;
   email: string | null;
+  role: AuthRole | null;
 }
 
 export class AuthRequestError extends Error {
-  constructor(message: string, readonly retryAfter = 0) {
+  constructor(message: string, readonly retryAfter = 0, readonly code = '', readonly status = 0) {
     super(message);
     this.name = 'AuthRequestError';
   }
@@ -25,20 +28,30 @@ async function request<T>(path: string, body?: object, signal?: AbortSignal): Pr
     if (signal?.aborted) throw error;
     throw new AuthRequestError('暂时无法连接服务，请检查网络后重试。');
   }
-  const payload = await response.json().catch(() => null) as { data?: T; error?: { message?: string; details?: { retryAfter?: number } } } | null;
+  const payload = await response.json().catch(() => null) as {
+    data?: T;
+    error?: { code?: string; message?: string; details?: { retryAfter?: number } };
+  } | null;
   if (!response.ok) {
     const retryAfter = Number(response.headers.get('Retry-After') ?? payload?.error?.details?.retryAfter ?? 0);
-    throw new AuthRequestError(payload?.error?.message || '请求未完成，请稍后重试。', Number.isFinite(retryAfter) ? retryAfter : 0);
+    throw new AuthRequestError(
+      payload?.error?.message || '请求未完成，请稍后重试。',
+      Number.isFinite(retryAfter) ? retryAfter : 0,
+      payload?.error?.code ?? '',
+      response.status,
+    );
   }
   if (payload?.data === undefined) throw new AuthRequestError('服务响应异常，请稍后重试。');
   return payload.data;
 }
 
+/** 会话响应校验：兼容旧版后端（无 role 字段），按上下文推导出 null */
 function validateSession(session: AuthSession): AuthSession {
   if (typeof session?.enabled !== 'boolean' || (session.email !== null && typeof session.email !== 'string')) {
     throw new AuthRequestError('会话响应异常，请重试。');
   }
-  return session;
+  const role = session.role === 'admin' || session.role === 'member' ? session.role : null;
+  return { enabled: session.enabled, email: session.email, role: session.email ? role : null };
 }
 
 export const authApi = {

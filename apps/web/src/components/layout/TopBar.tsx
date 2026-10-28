@@ -1,10 +1,13 @@
 import { CalendarDays } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
+import { useSession } from '../../auth/session';
 import { cn } from '../../lib/cn';
-import { NAV_ITEMS } from './navItems';
+import { visibleNavItems } from './navItems';
 
 /** 窄屏顶部栏：图标导航；≥1024px 由 SideNav 承担 */
 export function TopBar() {
+  const { isAdmin } = useSession();
+  const items = visibleNavItems(isAdmin);
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-surface lg:hidden">
       <div className="flex h-14 items-center justify-between gap-2 px-4 sm:px-6">
@@ -14,8 +17,8 @@ export function TopBar() {
           </span>
           <span className="hidden truncate text-sm font-semibold tracking-tight text-ink min-[350px]:inline">FreeShift</span>
         </NavLink>
-        <nav aria-label="主导航" className="flex shrink-0 items-center gap-0.5">
-          {NAV_ITEMS.map((item) => (
+        <nav aria-label="主导航" className="scrollbar-thin flex shrink-0 items-center gap-0.5 overflow-x-auto">
+          {items.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -24,7 +27,7 @@ export function TopBar() {
               title={item.label}
               className={({ isActive }) =>
                 cn(
-                  'flex h-9 w-9 items-center justify-center rounded-control transition-colors duration-150',
+                  'flex h-9 w-9 shrink-0 items-center justify-center rounded-control transition-colors duration-150',
                   isActive ? 'bg-brand-soft text-brand' : 'text-muted hover:bg-canvas hover:text-ink',
                 )
               }

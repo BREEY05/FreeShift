@@ -25,6 +25,35 @@ export function defaultDatabasePath(): string {
   return join(repoRoot, 'data', 'freeshift.db');
 }
 
+/**
+ * 轻量迁移：schema.sql 只做 CREATE TABLE IF NOT EXISTS，老库需要补列。
+ * 每一步都幂等（先查 PRAGMA table_info 再决定是否 ALTER）。
+ */
+export function migrate(db: DatabaseSyncInstance): void {
+  const columnsOf = (table: string): Set<string> => {
+    const rows = db.prepare('PRAGMA table_info(' + table + ')').all() as { name: string }[];
+    return new Set(rows.map((row) => row.name));
+  };
+
+  const hasTable = (table: string): boolean => {
+    const row = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);
+    return Boolean(row);
+  };
+
+  if (hasTable('auth_account')) {
+    const columns = columnsOf('auth_account');
+    if (!columns.has('role')) {
+      db.exec("ALTER TABLE auth_account ADD COLUMN role TEXT NOT NULL DEFAULT 'member'");
+    }
+    if (!columns.has('added_by')) {
+      db.exec('ALTER TABLE auth_account ADD COLUMN added_by TEXT');
+    }
+    if (!columns.has('last_login_at')) {
+      db.exec('ALTER TABLE auth_account ADD COLUMN last_login_at INTEGER');
+    }
+  }
+}
+
 export function getDb(): DatabaseSyncInstance {
   if (instance) return instance;
   const file = process.env.DATABASE_PATH ?? defaultDatabasePath();
@@ -36,6 +65,7 @@ export function getDb(): DatabaseSyncInstance {
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec('PRAGMA busy_timeout = 5000;');
   db.exec(readFileSync(join(here, 'schema.sql'), 'utf8'));
+  migrate(db);
   seedDefaults(db);
   instance = db;
   return db;
