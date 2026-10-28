@@ -60,6 +60,7 @@ $launcher = @'
 setlocal
 cd /d "%~dp0"
 set NODE_ENV=production
+set AUTH_ENABLED=false
 set PORT=5180
 set HOST=127.0.0.1
 set DATABASE_PATH=%~dp0data\freeshift.db

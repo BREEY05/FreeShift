@@ -77,6 +77,31 @@ CREATE TABLE IF NOT EXISTS schedule_occurrence (
 CREATE INDEX IF NOT EXISTS ix_occ_schedule ON schedule_occurrence(schedule_id);
 CREATE INDEX IF NOT EXISTS ix_occ_user_week ON schedule_occurrence(semester_id, user_id, week_no);
 
+-- Authentication identities are independent of shared scheduling users.
+CREATE TABLE IF NOT EXISTS auth_account (
+  email TEXT PRIMARY KEY,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS auth_otp (
+  email TEXT PRIMARY KEY,
+  code_hash TEXT NOT NULL,
+  salt TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS auth_rate_limit (
+  key TEXT PRIMARY KEY,
+  window_start INTEGER NOT NULL,
+  count INTEGER NOT NULL,
+  last_sent INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS auth_session (
+  token_hash TEXT PRIMARY KEY,
+  email TEXT NOT NULL REFERENCES auth_account(email) ON DELETE CASCADE,
+  expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_auth_session_expiry ON auth_session(expires_at);
+
 CREATE TABLE IF NOT EXISTS algo_config (
   id           INTEGER PRIMARY KEY CHECK (id = 1),
   weights_json TEXT NOT NULL,

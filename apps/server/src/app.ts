@@ -13,6 +13,7 @@ import { boardRoutes } from './routes/board.ts';
 import { recommendRoutes } from './routes/recommend.ts';
 import { statsRoutes } from './routes/stats.ts';
 import { dataRoutes } from './routes/data.ts';
+import { installAuth } from './routes/auth.ts';
 
 export const APP_VERSION = process.env.APP_VERSION ?? '1.0.0';
 
@@ -84,6 +85,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       error: { code: 'INTERNAL_ERROR', message: '服务器内部错误' },
     });
   });
+
+  installAuth(app);
 
   const staticDir = options.staticDir;
   const staticReady = Boolean(staticDir && existsSync(join(staticDir, 'index.html')));

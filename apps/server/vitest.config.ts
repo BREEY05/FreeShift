@@ -6,6 +6,7 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     env: {
       DATABASE_PATH: ':memory:',
+      AUTH_ENABLED: 'false',
       TZ: 'Asia/Shanghai',
     },
     testTimeout: 20000,

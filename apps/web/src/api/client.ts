@@ -59,6 +59,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   if (!response.ok) {
+    if (response.status === 401) window.dispatchEvent(new Event('freeshift:unauthorized'));
     const errorPayload = (payload as { error?: ApiErrorPayload } | null)?.error;
     throw new ApiError(
       response.status,

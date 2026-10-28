@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { buildApp } from './app.ts';
 import { getDb } from './db/index.ts';
 
+// Local SMTP configuration stays outside Git; systemd loads its own EnvironmentFile.
+const localEnv = resolve(dirname(fileURLToPath(import.meta.url)), '../../../.env');
+if (existsSync(localEnv)) process.loadEnvFile(localEnv);
+
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '0.0.0.0';
 

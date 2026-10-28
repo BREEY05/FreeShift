@@ -14,6 +14,7 @@ Environment=HOST=127.0.0.1
 Environment=TZ=Asia/Shanghai
 Environment=DATABASE_PATH=/data/freeshift/freeshift.db
 Environment=LOG_LEVEL=info
+EnvironmentFile=-/data/freeshift/auth.env
 ExecStart=/opt/node24/bin/node apps/server/src/index.ts
 Restart=always
 RestartSec=3

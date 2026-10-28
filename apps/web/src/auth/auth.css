@@ -1,0 +1,61 @@
+.fs-auth-page { min-height: 100svh; display: flex; flex-direction: column; padding: 36px max(28px, calc((100vw - 1180px) / 2)); color: var(--fs-ink); background: radial-gradient(ellipse at 3% 50%, var(--fs-brand-soft), transparent 58%), var(--fs-canvas); font-family: 'Noto Sans SC', 'Microsoft YaHei', sans-serif; }
+.fs-auth-brand { display: flex; align-items: center; gap: 12px; font-size: 19px; font-weight: 650; letter-spacing: -.6px; }
+.fs-auth-brand small { display: block; margin-top: 3px; color: var(--fs-muted); font-size: 11px; font-weight: 400; letter-spacing: 2px; }
+.fs-auth-mark { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 13px; color: white; background: var(--fs-brand); box-shadow: 0 5px 14px #4f46e51a; }
+.fs-auth-layout { display: grid; grid-template-columns: minmax(0, 1fr) 420px; align-items: center; gap: clamp(40px, 7vw, 110px); flex: 1; padding: 68px 0; }
+.fs-auth-eyebrow, .fs-auth-step { font-size: 10px; font-weight: 600; letter-spacing: 2px; color: var(--fs-brand); }
+.fs-auth-story h1 { margin: 25px 0 22px; font-size: clamp(36px, 4.2vw, 56px); line-height: 1.35; letter-spacing: -2px; font-weight: 600; }
+.fs-auth-story > p { color: var(--fs-muted); font-size: 14px; line-height: 1.95; }
+.fs-auth-schedule { width: 100%; max-width: 440px; margin-top: 37px; padding: 20px; border: 1px solid #ffffff; border-radius: 16px; background: #ffffffb8; box-shadow: 0 12px 50px #24274406; }
+.fs-auth-schedule-title { display: flex; gap: 9px; align-items: center; font-size: 12px; color: var(--fs-muted); }
+.fs-auth-live { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: var(--fs-mint); }
+.fs-auth-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; margin: 18px 0 15px; }
+.fs-auth-day { padding-bottom: 3px; font-size: 9px; letter-spacing: 1px; text-align: center; color: var(--fs-subtle); }
+.fs-auth-cell { height: 29px; border-radius: 5px; background: #f0f1f5; }
+.fs-auth-cell-1, .fs-auth-cell-3 { background: #dfdff8; }
+.fs-auth-cell-5 { background: var(--fs-brand); display: flex; gap: 3px; align-items: center; justify-content: center; color: white; font-size: 9px; white-space: nowrap; }
+.fs-auth-cell-6 { background: #d9eee9; }
+.fs-auth-schedule-footer { display: flex; justify-content: space-between; gap: 10px; color: var(--fs-subtle); font-size: 9px; }
+.fs-auth-schedule-footer > span:first-child { display: flex; align-items: center; gap: 5px; }
+.fs-auth-schedule-footer i { width: 6px; height: 6px; background: var(--fs-brand); border-radius: 2px; }
+.fs-auth-card { background: var(--fs-surface); border: 1px solid var(--fs-line); border-radius: 20px; padding: 38px 32px 28px; box-shadow: 0 16px 65px #25254406; animation: fs-auth-enter .45s ease both; }
+.fs-auth-card h2 { margin: 17px 0 12px; font-size: 25px; font-weight: 600; letter-spacing: -.8px; }
+.fs-auth-intro { font-size: 12px; color: var(--fs-muted); line-height: 1.9; margin-bottom: 28px; }
+.fs-auth-card label { display: block; font-size: 12px; font-weight: 500; margin-bottom: 9px; }
+.fs-auth-input-wrap { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 14px; border: 1px solid var(--fs-line); border-radius: 9px; color: var(--fs-subtle); background: var(--fs-canvas); }
+.fs-auth-input-wrap:focus-within { border-color: var(--fs-brand); box-shadow: 0 0 0 3px var(--fs-brand-soft); }
+.fs-auth-input-wrap input { width: 100%; min-width: 0; background: transparent; border: 0; outline: none; color: var(--fs-ink); font-size: 13px; }
+.fs-auth-input-wrap input:focus-visible { outline: none; }
+.fs-auth-input-wrap input::placeholder, .fs-auth-code::placeholder { color: var(--fs-subtle); }
+.fs-auth-input-wrap input:disabled { opacity: .8; }
+.fs-auth-primary { width: 100%; min-height: 48px; margin-top: 18px; display: flex; align-items: center; justify-content: center; gap: 10px; border-radius: 9px; border: 0; background: var(--fs-brand); color: white; font-size: 13px; font-weight: 500; transition: background .15s, transform .15s; }
+.fs-auth-primary:hover:enabled { background: var(--fs-brand-hover); transform: translateY(-1px); }
+.fs-auth-primary:disabled { cursor: not-allowed; opacity: .65; }
+.fs-auth-code-label { display: flex; justify-content: space-between; align-items: center; margin-top: 21px; }
+.fs-auth-code-label button { margin-bottom: 9px; color: var(--fs-brand); font-size: 11px; }
+.fs-auth-code { width: 100%; min-height: 48px; padding: 10px 15px; border: 1px solid var(--fs-line); background: var(--fs-canvas); border-radius: 9px; font-size: 20px; letter-spacing: 8px; font-variant-numeric: tabular-nums; }
+.fs-auth-code::placeholder { font-size: 13px; letter-spacing: 2px; }
+.fs-auth-help { color: var(--fs-muted); font-size: 11px; line-height: 1.8; margin-top: 10px; }
+.fs-auth-resend { display: block; margin: 16px auto 0; min-height: 28px; color: var(--fs-brand); font-size: 12px; }
+.fs-auth-resend:disabled { color: var(--fs-muted); cursor: not-allowed; }
+.fs-auth-assurance { display: flex; align-items: center; justify-content: center; gap: 7px; border-top: 1px solid var(--fs-line); margin-top: 28px; padding-top: 22px; font-size: 11px; color: var(--fs-muted); }
+.fs-auth-assurance svg { color: var(--fs-mint); flex-shrink: 0; }
+.fs-auth-registration { text-align: center; font-size: 10px; line-height: 1.9; color: var(--fs-muted); margin-top: 13px; }
+.fs-auth-error, .fs-auth-notice { font-size: 12px; line-height: 1.8; padding: 10px 12px; border-radius: 7px; margin-top: 12px; overflow-wrap: anywhere; }
+.fs-auth-error { color: var(--fs-danger); background: #fef2f2; }
+.fs-auth-notice { color: var(--fs-brand); background: var(--fs-brand-soft); margin: -10px 0 20px; }
+.fs-auth-footer { display: flex; justify-content: space-between; gap: 20px; font-size: 10px; color: var(--fs-muted); letter-spacing: .5px; }
+.fs-auth-status { min-height: 100svh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px; background: var(--fs-canvas); text-align: center; }
+.fs-auth-status h1 { font-size: 20px; font-weight: 600; }
+.fs-auth-status p { display: flex; gap: 8px; align-items: center; color: var(--fs-muted); font-size: 13px; }
+.fs-auth-status .fs-auth-primary { max-width: 200px; margin: 0; }
+.fs-auth-account { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 9px; min-height: 36px; padding: 6px 24px; border-bottom: 1px solid var(--fs-line); background: var(--fs-surface); font-size: 11px; color: var(--fs-muted); }
+.fs-auth-account-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--fs-mint); flex-shrink: 0; }
+.fs-auth-account-email { max-width: min(55vw, 300px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-auth-account button { display: flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 6px; border-radius: 4px; }
+.fs-auth-account button:hover { color: var(--fs-brand); background: var(--fs-brand-soft); }
+.fs-auth-account-error { color: var(--fs-danger); }
+@keyframes fs-auth-enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 900px) { .fs-auth-layout { gap: 32px; grid-template-columns: minmax(0, 1fr) 380px; } .fs-auth-card { padding: 30px 25px 25px; } .fs-auth-story h1 { font-size: 38px; } .fs-auth-eyebrow { font-size: 8px; letter-spacing: 1px; } .fs-auth-cell-5 { font-size: 0; } }
+@media (max-width: 700px) { .fs-auth-page { padding: 24px 20px; } .fs-auth-layout { grid-template-columns: minmax(0, 1fr); gap: 25px; padding: 38px 0; width: 100%; max-width: 420px; margin: auto; } .fs-auth-story h1 { font-size: 31px; margin: 0 0 13px; letter-spacing: -1px; } .fs-auth-story h1 br { display: none; } .fs-auth-story > p { font-size: 12px; } .fs-auth-eyebrow, .fs-auth-schedule { display: none; } .fs-auth-card { border-radius: 16px; padding: 28px 23px 24px; } .fs-auth-footer { font-size: 9px; } .fs-auth-footer > span:last-child { display: none; } .fs-auth-account { padding: 4px 12px; } }
+@media (prefers-reduced-motion: reduce) { .fs-auth-card { animation: none; } .fs-auth-primary { transition: none; } }

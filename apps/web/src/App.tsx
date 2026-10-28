@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './components/layout/AppShell';
+import { AuthGate } from './auth/AuthGate';
 import DashboardPage from './pages/DashboardPage';
 import RecommendPage from './pages/RecommendPage';
 import SettingsPage from './pages/SettingsPage';
@@ -10,6 +11,7 @@ import UsersPage from './pages/UsersPage';
 /** 路由表：/ 主看板，其余页面由 app shell 包裹，未知路径回主看板 */
 export default function App() {
   return (
+    <AuthGate>
     <Routes>
       <Route element={<AppShell />}>
         <Route path="/" element={<DashboardPage />} />
@@ -22,5 +24,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
+    </AuthGate>
   );
 }
