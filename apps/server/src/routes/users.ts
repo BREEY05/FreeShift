@@ -34,7 +34,9 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
   app.post('/', async (request, reply) => {
     const input = parseBody(userInputSchema, request.body ?? {});
     reply.status(201);
-    return { data: { user: createUser(input, requireOrg(request)) } };
+    const orgId = requireOrg(request);
+    const created = createUser(input, orgId);
+    return { data: { user: created } };
   });
 
   app.patch('/:id', async (request) => {

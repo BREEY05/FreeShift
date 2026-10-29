@@ -20,7 +20,9 @@ import {
 
 export const templateRoutes: FastifyPluginAsync = async (app) => {
   app.get('/', async (request) => {
-    return { data: { templates: listTemplates(requireOrg(request)) } };
+    const orgId = requireOrg(request);
+    const list = listTemplates(orgId);
+    return { data: { templates: list } };
   });
 
   app.get('/:id', async (request) => {
