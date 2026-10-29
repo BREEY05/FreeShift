@@ -15,3 +15,8 @@ data/
 .tmp-*.ts
 freeshift.tgz
 dist-local/
+.deploy-test/
+.deploy-api/
+dist-release/
+dist-release-log.txt
+.reltest*/

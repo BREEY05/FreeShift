@@ -14,6 +14,8 @@ Environment=HOST=127.0.0.1
 Environment=TZ=Asia/Shanghai
 Environment=DATABASE_PATH=/data/freeshift/freeshift.db
 Environment=LOG_LEVEL=info
+# 同一进程同时托管前端构建产物（apps/web/dist），更新时无需依赖 Nginx 的静态目录
+Environment=SERVE_STATIC=/opt/freeshift/apps/web/dist
 EnvironmentFile=-/data/freeshift/auth.env
 ExecStart=/opt/node24/bin/node apps/server/src/index.ts
 Restart=always
