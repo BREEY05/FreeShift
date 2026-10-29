@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import type { AlternativesInput, ScoredInput } from '@freeshift/shared';
 import { z } from 'zod';
 import { parseBody } from '../lib/validate.ts';
+import { requireOrg } from '../services/orgContext.ts';
 import {
   getAlternatives,
   getCommonFreeBlocks,
@@ -78,17 +79,21 @@ export const recommendRoutes: FastifyPluginAsync = async (app) => {
 
   app.post('/common-free', async (request) => {
     const input = parseBody(commonFreeSchema, request.body);
+    const orgId = requireOrg(request);
     return {
-      data: { blocks: getCommonFreeBlocks({ ...input, userIds: input.userIds ?? [] }) },
+      data: { blocks: getCommonFreeBlocks({ ...input, userIds: input.userIds ?? [] }, orgId) },
     };
   });
 
   app.post('/scored', async (request) => {
     const input = parseBody(scoredSchema, request.body);
-    return { data: { cells: getScoredCells(input as unknown as ScoredInput) } };
+    const orgId = requireOrg(request);
+    return { data: { cells: getScoredCells(input as unknown as ScoredInput, orgId) } };
   });
 
-  app.post('/alternatives', async (request) => ({
-    data: getAlternatives(parseBody(alternativesSchema, request.body) as unknown as AlternativesInput),
-  }));
+  app.post('/alternatives', async (request) => {
+    const input = parseBody(alternativesSchema, request.body) as unknown as AlternativesInput;
+    const orgId = requireOrg(request);
+    return { data: getAlternatives(input, orgId) };
+  });
 };

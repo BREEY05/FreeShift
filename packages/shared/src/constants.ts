@@ -72,6 +72,7 @@ export const DEFAULT_USER_COLORS = [
 ];
 
 export const PRESET_TEMPLATE_NAMES = {
+  AUTUMN_COURSE: '大学课表（秋）',
   TWO_PERIODS: '大学两节连排',
   SINGLE_PERIODS: '大学小节',
   HALF_DAY: '半天制',

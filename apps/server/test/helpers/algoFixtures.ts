@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { all, get, getDb, run } from '../../src/db/index.ts';
 import type { SlotRow, UserRow } from '../../src/lib/mappers.ts';
 import { mapSlot, mapUser } from '../../src/lib/mappers.ts';
-import { getActiveSemester, getTemplateSlots } from '../../src/services/context.ts';
+import { defaultOrgId, getActiveSemester, getTemplateSlots } from '../../src/services/context.ts';
 import { refreshOccurrences } from '../../src/services/occurrence.ts';
 
 export const TEST_TEMPLATE_NAME = '算法测试模板';
@@ -47,16 +47,20 @@ export interface AddScheduleInput {
   note?: string;
 }
 
-function ensureTestTemplate(): number {
-  const existing = get<{ id: number }>('SELECT id FROM slot_template WHERE name = ?', [TEST_TEMPLATE_NAME]);
+function ensureTestTemplate(orgId: number): number {
+  const existing = get<{ id: number }>('SELECT id FROM slot_template WHERE name = ? AND org_id = ?', [
+    TEST_TEMPLATE_NAME,
+    orgId,
+  ]);
   let templateId: number;
   if (existing) {
     templateId = Number(existing.id);
     run('DELETE FROM time_slot WHERE template_id = ?', [templateId]);
   } else {
-    templateId = run('INSERT INTO slot_template (name, description, is_preset) VALUES (?, ?, 0)', [
+    templateId = run('INSERT INTO slot_template (name, description, is_preset, org_id) VALUES (?, ?, 0, ?)', [
       TEST_TEMPLATE_NAME,
       '测试用 7 格连续模板',
+      orgId,
     ]).lastInsertRowid;
   }
   SLOT_DEFS.forEach((slot, index) => {
@@ -74,10 +78,13 @@ function ensureTestTemplate(): number {
  */
 export function setupAlgoFixture(userNames: string[] = []): AlgoFixture {
   const db = getDb();
-  db.exec('DELETE FROM schedule_occurrence; DELETE FROM schedule; DELETE FROM app_user;');
+  const orgId = defaultOrgId();
+  // 只清理本组织的数据，避免同一 :memory: 库内多组织测试互相干扰
+  db.exec('DELETE FROM schedule_occurrence; DELETE FROM schedule;');
+  db.exec('DELETE FROM app_user WHERE org_id = ' + Number(orgId));
 
-  const templateId = ensureTestTemplate();
-  const semester = getActiveSemester();
+  const templateId = ensureTestTemplate(orgId);
+  const semester = getActiveSemester(orgId);
   run(
     `UPDATE semester
         SET name = ?, start_date = ?, total_weeks = ?, week1_parity = ?, active_template_id = ?,
@@ -90,32 +97,33 @@ export function setupAlgoFixture(userNames: string[] = []): AlgoFixture {
 
   if (userNames.length > 0) addUsers(userNames);
 
-  const currentSemester = getActiveSemester();
+  const currentSemester = getActiveSemester(orgId);
   return {
     semester: currentSemester,
     templateId,
     slots: getTemplateSlots(templateId),
-    users: listUsers(),
+    users: listUsers(orgId),
   };
 }
 
-export function addUsers(names: string[]): AppUser[] {
-  const maxRow = get<{ n: number }>('SELECT COALESCE(MAX(sort_order), 0) AS n FROM app_user');
+export function addUsers(names: string[], orgId: number = defaultOrgId()): AppUser[] {
+  const maxRow = get<{ n: number }>('SELECT COALESCE(MAX(sort_order), 0) AS n FROM app_user WHERE org_id = ?', [orgId]);
   let sortOrder = Number(maxRow?.n ?? 0);
   names.forEach((name, index) => {
     sortOrder += 1;
-    run('INSERT INTO app_user (name, color, note, is_active, sort_order) VALUES (?, ?, ?, 1, ?)', [
+    run('INSERT INTO app_user (org_id, name, color, note, is_active, sort_order) VALUES (?, ?, ?, ?, 1, ?)', [
+      orgId,
       name,
       DEFAULT_USER_COLORS[index % DEFAULT_USER_COLORS.length],
       '',
       sortOrder,
     ]);
   });
-  return listUsers();
+  return listUsers(orgId);
 }
 
-export function listUsers(): AppUser[] {
-  return all<UserRow>('SELECT * FROM app_user ORDER BY sort_order ASC, id ASC').map(mapUser);
+export function listUsers(orgId: number = defaultOrgId()): AppUser[] {
+  return all<UserRow>('SELECT * FROM app_user WHERE org_id = ? ORDER BY sort_order ASC, id ASC', [orgId]).map(mapUser);
 }
 
 export function getSlots(templateId: number): TimeSlot[] {

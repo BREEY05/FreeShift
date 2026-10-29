@@ -1,7 +1,7 @@
 import type { FairnessReport, FairnessUser } from '@freeshift/shared';
 import { all } from '../db/index.ts';
 import { badRequest } from '../lib/errors.ts';
-import { getActiveSemester, listActiveUsers } from './context.ts';
+import { defaultOrgId, getActiveSemester, listActiveUsers } from './context.ts';
 
 export interface FairnessQuery {
   fromWeek?: number;
@@ -43,8 +43,10 @@ export function varianceOf(values: number[]): number {
 }
 
 /** 算法 4：公平性统计（按周 + 星期合并连续 sort_order 块） */
-export function getFairnessReport(query: FairnessQuery = {}): FairnessReport {
-  const semester = getActiveSemester();
+/** 统计口径限定为当前组织的启用成员；跨组织用户既不参与指标也不影响基尼系数 */
+export function getFairnessReport(query: FairnessQuery = {}, orgId?: number): FairnessReport {
+  const org = orgId ?? defaultOrgId();
+  const semester = getActiveSemester(org);
   const fromWeek = query.fromWeek ?? 1;
   const toWeek = query.toWeek ?? semester.totalWeeks;
   if (
@@ -57,15 +59,16 @@ export function getFairnessReport(query: FairnessQuery = {}): FairnessReport {
     throw badRequest('周次范围不合法：' + fromWeek + ' ~ ' + toWeek);
   }
 
-  const users = listActiveUsers();
+  const users = listActiveUsers(org);
   const userById = new Map(users.map((user) => [user.id, user]));
   const rows = all<OccurrenceLoadRow>(
     `SELECT o.user_id, o.week_no, o.weekday, o.slot_id, ts.duration_min, ts.sort_order
        FROM schedule_occurrence o
        JOIN time_slot ts ON ts.id = o.slot_id
-      WHERE o.semester_id = ? AND o.week_no BETWEEN ? AND ?
+       JOIN app_user u ON u.id = o.user_id
+      WHERE o.semester_id = ? AND o.week_no BETWEEN ? AND ? AND u.org_id = ?
       ORDER BY o.user_id ASC, o.week_no ASC, o.weekday ASC, ts.sort_order ASC`,
-    [semester.id, fromWeek, toWeek],
+    [semester.id, fromWeek, toWeek, org],
   );
 
   interface Accumulator {

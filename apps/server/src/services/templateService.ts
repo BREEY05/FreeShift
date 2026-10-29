@@ -4,7 +4,7 @@ import type { DayPart, SemesterOverview, SlotInput, SlotTemplate, TimeSlot } fro
 import { all, get, run, transaction } from '../db/index.ts';
 import { AppError, notFound } from '../lib/errors.ts';
 import { mapSlot, mapTemplate, type SemesterRow, type SlotRow, type TemplateRow } from '../lib/mappers.ts';
-import { getActiveSemester, getTemplateSlots } from './context.ts';
+import { defaultOrgId, getActiveSemester, getTemplateSlots } from './context.ts';
 
 const timeSchema = z
   .string()
@@ -135,29 +135,29 @@ function insertSlotRecord(templateId: number, values: SlotValues): number {
   return result.lastInsertRowid;
 }
 
-function templateRow(id: number): TemplateRow | undefined {
-  return get<TemplateRow>('SELECT * FROM slot_template WHERE id = ?', [id]);
+function templateRow(id: number, orgId = defaultOrgId()): TemplateRow | undefined {
+  return get<TemplateRow>('SELECT * FROM slot_template WHERE id = ? AND org_id = ?', [id, orgId]);
 }
 
-function requireTemplateRow(id: number): TemplateRow {
-  const row = templateRow(id);
+function requireTemplateRow(id: number, orgId = defaultOrgId()): TemplateRow {
+  const row = templateRow(id, orgId);
   if (!row) throw notFound('模板');
   return row;
 }
 
-function activeSemesterRow(): SemesterRow | undefined {
-  return get<SemesterRow>('SELECT * FROM semester WHERE is_active = 1 LIMIT 1');
+function activeSemesterRow(orgId = defaultOrgId()): SemesterRow | undefined {
+  return get<SemesterRow>('SELECT * FROM semester WHERE is_active = 1 AND org_id = ? LIMIT 1', [orgId]);
 }
 
-function buildOverview(): SemesterOverview {
-  const semester = getActiveSemester();
+function buildOverview(orgId = defaultOrgId()): SemesterOverview {
+  const semester = getActiveSemester(orgId);
   return { semester, weeks: buildWeeks(semester) };
 }
 
-function assertTemplateNameAvailable(name: string, excludeId?: number): void {
+function assertTemplateNameAvailable(name: string, excludeId?: number, orgId = defaultOrgId()): void {
   const row = excludeId
-    ? get<TemplateRow>('SELECT * FROM slot_template WHERE name = ? AND id <> ?', [name, excludeId])
-    : get<TemplateRow>('SELECT * FROM slot_template WHERE name = ?', [name]);
+    ? get<TemplateRow>('SELECT * FROM slot_template WHERE name = ? AND id <> ? AND org_id = ?', [name, excludeId, orgId])
+    : get<TemplateRow>('SELECT * FROM slot_template WHERE name = ? AND org_id = ?', [name, orgId]);
   if (row) throw new AppError(409, 'TEMPLATE_EXISTS', '模板名称已存在：' + name);
 }
 
@@ -203,21 +203,22 @@ function validationError(message: string, path: string): AppError {
   return new AppError(422, 'VALIDATION_ERROR', message, [{ path, message }]);
 }
 
-export function listTemplates(): SlotTemplate[] {
+export function listTemplates(orgId = defaultOrgId()): SlotTemplate[] {
   const rows = all<TemplateRow>(
     `SELECT t.*,
             (SELECT COUNT(*) FROM time_slot ts WHERE ts.template_id = t.id) AS slot_count,
             (SELECT COUNT(*) FROM semester s WHERE s.is_active = 1 AND s.active_template_id = t.id) AS is_active
        FROM slot_template t
-      ORDER BY t.id ASC`,
+      WHERE t.org_id = ?
+      ORDER BY t.id ASC`, [orgId],
   );
   return rows.map(mapTemplate);
 }
 
-export function getTemplateDetail(id: number): TemplateDetail {
-  const row = requireTemplateRow(id);
+export function getTemplateDetail(id: number, orgId = defaultOrgId()): TemplateDetail {
+  const row = requireTemplateRow(id, orgId);
   const slots = getTemplateSlots(id);
-  const active = activeSemesterRow();
+  const active = activeSemesterRow(orgId);
   return {
     template: mapTemplate({
       ...row,
@@ -228,22 +229,23 @@ export function getTemplateDetail(id: number): TemplateDetail {
   };
 }
 
-export function createTemplate(input: TemplateInputParsed): TemplateDetail {
+export function createTemplate(input: TemplateInputParsed, orgId = defaultOrgId()): TemplateDetail {
   const name = input.name.trim();
-  assertTemplateNameAvailable(name);
+  assertTemplateNameAvailable(name, undefined, orgId);
 
   let sourceSlots: TimeSlot[] = [];
   if (input.cloneFrom !== undefined) {
-    const source = requireTemplateRow(input.cloneFrom);
+    const source = requireTemplateRow(input.cloneFrom, orgId);
     sourceSlots = getTemplateSlots(source.id);
   }
 
   let templateId: number;
   try {
     templateId = transaction(() => {
-      const result = run('INSERT INTO slot_template (name, description, is_preset) VALUES (?, ?, 0)', [
+      const result = run('INSERT INTO slot_template (name, description, is_preset, org_id) VALUES (?, ?, 0, ?)', [
         name,
         input.description ?? '',
+        orgId,
       ]);
       const id = result.lastInsertRowid;
       sourceSlots.forEach((slot, index) => {
@@ -265,18 +267,18 @@ export function createTemplate(input: TemplateInputParsed): TemplateDetail {
     }
     throw error;
   }
-  return getTemplateDetail(templateId);
+  return getTemplateDetail(templateId, orgId);
 }
 
-export function updateTemplate(id: number, patch: TemplatePatchParsed): TemplateDetail {
-  const row = requireTemplateRow(id);
+export function updateTemplate(id: number, patch: TemplatePatchParsed, orgId = defaultOrgId()): TemplateDetail {
+  const row = requireTemplateRow(id, orgId);
   if (Number(row.is_preset) === 1) throw readonlyError();
   const sets: string[] = [];
   const params: (string | number)[] = [];
   if (patch.name !== undefined) {
     const name = patch.name.trim();
     if (name !== row.name) {
-      assertTemplateNameAvailable(name, id);
+      assertTemplateNameAvailable(name, id, orgId);
       sets.push('name = ?');
       params.push(name);
     }
@@ -296,11 +298,11 @@ export function updateTemplate(id: number, patch: TemplatePatchParsed): Template
       throw error;
     }
   }
-  return getTemplateDetail(id);
+  return getTemplateDetail(id, orgId);
 }
 
-export function deleteTemplate(id: number): void {
-  const row = requireTemplateRow(id);
+export function deleteTemplate(id: number, orgId = defaultOrgId()): void {
+  const row = requireTemplateRow(id, orgId);
   if (Number(row.is_preset) === 1) throw readonlyError();
   if (countSemestersUsingTemplate(id) > 0) {
     throw new AppError(409, 'TEMPLATE_ACTIVE', '模板正在被学期使用，无法删除');
@@ -312,10 +314,10 @@ export function deleteTemplate(id: number): void {
   run('DELETE FROM slot_template WHERE id = ?', [id]);
 }
 
-export function activateTemplate(id: number, force: boolean): SemesterOverview {
-  requireTemplateRow(id);
-  const semester = getActiveSemester();
-  if (semester.activeTemplateId === id) return buildOverview();
+export function activateTemplate(id: number, force: boolean, orgId = defaultOrgId()): SemesterOverview {
+  requireTemplateRow(id, orgId);
+  const semester = getActiveSemester(orgId);
+  if (semester.activeTemplateId === id) return buildOverview(orgId);
 
   const oldTemplateId = semester.activeTemplateId;
   let scheduleCount = 0;
@@ -331,11 +333,11 @@ export function activateTemplate(id: number, force: boolean): SemesterOverview {
     id,
     semester.id,
   ]);
-  return buildOverview();
+  return buildOverview(orgId);
 }
 
-export function replaceSlots(templateId: number, inputs: SlotInput[]): TimeSlot[] {
-  const row = requireTemplateRow(templateId);
+export function replaceSlots(templateId: number, inputs: SlotInput[], orgId = defaultOrgId()): TimeSlot[] {
+  const row = requireTemplateRow(templateId, orgId);
   if (Number(row.is_preset) === 1) throw readonlyError();
 
   const scheduleCount = countSchedulesUsingTemplate(templateId);
@@ -362,8 +364,8 @@ export function replaceSlots(templateId: number, inputs: SlotInput[]): TimeSlot[
   return getTemplateSlots(templateId);
 }
 
-export function addSlot(templateId: number, input: SlotInputParsed): TimeSlot {
-  const row = requireTemplateRow(templateId);
+export function addSlot(templateId: number, input: SlotInputParsed, orgId = defaultOrgId()): TimeSlot {
+  const row = requireTemplateRow(templateId, orgId);
   if (Number(row.is_preset) === 1) throw readonlyError();
 
   const label = input.label.trim();
@@ -381,21 +383,21 @@ export function addSlot(templateId: number, input: SlotInputParsed): TimeSlot {
 
 type SlotRowWithPreset = SlotRow & { is_preset: number };
 
-function requireSlotRow(id: number): SlotRowWithPreset {
+function requireSlotRow(id: number, orgId = defaultOrgId()): SlotRowWithPreset {
   const row = get<SlotRowWithPreset>(
     `SELECT ts.*, t.is_preset
        FROM time_slot ts
        JOIN slot_template t ON t.id = ts.template_id
-      WHERE ts.id = ?`,
-    [id],
+      WHERE ts.id = ? AND t.org_id = ?`,
+    [id, orgId],
   );
   if (!row) throw notFound('时间段');
   if (Number(row.is_preset) === 1) throw readonlyError();
   return row;
 }
 
-export function updateSlot(slotId: number, patch: SlotPatchParsed): TimeSlot {
-  const row = requireSlotRow(slotId);
+export function updateSlot(slotId: number, patch: SlotPatchParsed, orgId = defaultOrgId()): TimeSlot {
+  const row = requireSlotRow(slotId, orgId);
   const templateId = Number(row.template_id);
 
   const label = patch.label !== undefined ? patch.label.trim() : row.label;
@@ -431,8 +433,8 @@ export function updateSlot(slotId: number, patch: SlotPatchParsed): TimeSlot {
   return mapSlot(get<SlotRow>('SELECT * FROM time_slot WHERE id = ?', [slotId]) as SlotRow);
 }
 
-export function deleteSlot(slotId: number): void {
-  requireSlotRow(slotId);
+export function deleteSlot(slotId: number, orgId = defaultOrgId()): void {
+  requireSlotRow(slotId, orgId);
   const row = get<{ n: number }>('SELECT COUNT(*) AS n FROM schedule WHERE slot_id = ?', [slotId]);
   const scheduleCount = Number(row?.n ?? 0);
   if (scheduleCount > 0) {

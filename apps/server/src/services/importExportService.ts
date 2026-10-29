@@ -4,7 +4,7 @@ import { all, get, run, transaction } from '../db/index.ts';
 import { badRequest } from '../lib/errors.ts';
 import type { UserRow } from '../lib/mappers.ts';
 import { mapUser } from '../lib/mappers.ts';
-import { getActiveSemester, getSemesterSlots } from './context.ts';
+import { defaultOrgId, getActiveSemester, getSemesterSlots } from './context.ts';
 import { expandWeeks, insertOccurrences } from './occurrence.ts';
 import { parseCsv } from './csvService.ts';
 
@@ -29,8 +29,10 @@ function placeholders(count: number): string {
  * 导入安排 CSV：按 user 名与当前启用模板 slot label 匹配，
  * 逐行校验（错误行带行号、不中断），写库时事务内插入 schedule + occurrence。
  * dryRun 时只校验不写库，created/skipped 为“将会”的结果。
+ * 用户按名字只在本组织内匹配，跨组织同名成员不会被命中（也不会写进别的组织）。
  */
-export function importSchedules(csvText: string, dryRun = false): ImportResult {
+export function importSchedules(csvText: string, dryRun = false, orgId?: number): ImportResult {
+  const org = orgId ?? defaultOrgId();
   if (typeof csvText !== 'string' || csvText.trim().length === 0) {
     throw badRequest('CSV 内容为空');
   }
@@ -47,11 +49,13 @@ export function importSchedules(csvText: string, dryRun = false): ImportResult {
     throw badRequest('CSV 表头缺少列：' + missing.join(', '));
   }
 
-  const semester = getActiveSemester();
+  const semester = getActiveSemester(org);
   const slots = getSemesterSlots(semester);
   const slotByLabel = new Map(slots.map((slot) => [slot.label, slot]));
   const userByName = new Map(
-    all<UserRow>('SELECT * FROM app_user').map(mapUser).map((user) => [user.name, user] as const),
+    all<UserRow>('SELECT * FROM app_user WHERE org_id = ? ORDER BY id ASC', [org])
+      .map(mapUser)
+      .map((user) => [user.name, user] as const),
   );
   const noteIndex = columnIndex.get('note');
 

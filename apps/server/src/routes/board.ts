@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import type { DayPart, Weekday } from '@freeshift/shared';
 import { badRequest } from '../lib/errors.ts';
 import { toId, toInt } from '../lib/params.ts';
+import { requireOrg } from '../services/orgContext.ts';
 import {
   getAggregateBoard,
   getCellDetail,
@@ -64,13 +65,17 @@ function parseWeek(value: unknown): number | undefined {
 export const boardRoutes: FastifyPluginAsync = async (app) => {
   app.get('/aggregate', async (request) => {
     const query = request.query as Record<string, unknown>;
+    const orgId = requireOrg(request);
     return {
-      data: getAggregateBoard({
-        week: parseWeek(query.week),
-        userIds: parseIdList(query.user_ids, 'user_ids'),
-        dayParts: parseDayParts(query.day_parts),
-        filter: parseFilter(query.filter),
-      }),
+      data: getAggregateBoard(
+        {
+          week: parseWeek(query.week),
+          userIds: parseIdList(query.user_ids, 'user_ids'),
+          dayParts: parseDayParts(query.day_parts),
+          filter: parseFilter(query.filter),
+        },
+        orgId,
+      ),
     };
   });
 
@@ -80,19 +85,23 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
     if (weekday === undefined) throw badRequest('缺少参数：weekday');
     if (weekday < 1 || weekday > 7) throw badRequest('weekday 必须为 1-7 的整数');
     const slotId = toId(query.slot_id, 'slot_id');
+    const orgId = requireOrg(request);
     return {
-      data: getCellDetail({
-        week: parseWeek(query.week),
-        weekday: weekday as Weekday,
-        slotId,
-      }),
+      data: getCellDetail(
+        {
+          week: parseWeek(query.week),
+          weekday: weekday as Weekday,
+          slotId,
+        },
+        orgId,
+      ),
     };
   });
 
   app.get('/user/:id', async (request) => {
     const params = request.params as { id: string };
     const query = request.query as Record<string, unknown>;
-    return { data: getPersonalBoard(toId(params.id, 'id'), parseWeek(query.week)) };
+    return { data: getPersonalBoard(toId(params.id, 'id'), parseWeek(query.week), requireOrg(request)) };
   });
 
   app.get('/user/:id/schedules', async (request) => {
@@ -104,6 +113,7 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
           toId(params.id, 'id'),
           parseWeek(query.from_week),
           parseWeek(query.to_week),
+          requireOrg(request),
         ),
       },
     };

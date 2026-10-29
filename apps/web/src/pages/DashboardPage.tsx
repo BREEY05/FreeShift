@@ -1,9 +1,11 @@
-import { CalendarClock, Filter, LayoutGrid, MousePointer2, Plus, Settings, User as UserIcon, Users } from 'lucide-react';
+import { CalendarClock, Filter, LayoutGrid, MousePointer2, Plus, Settings, User as UserIcon, UserRoundCheck, Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { AppUser, TimeSlot, Weekday } from '@freeshift/shared';
 import { ApiError } from '../api/client';
-import { useAggregateBoard, usePersonalBoard, useWeekSchedules } from '../hooks/useBoard';
+import { usePersonalBoard, useWeekSchedules } from '../hooks/useBoard';
+import { useAggregateBoardWithin } from '../hooks/useAggregateBoard';
+import { useSyncedMembers } from '../hooks/useSyncedMembers';
 import { useSemester } from '../hooks/useSemester';
 import { useUsers } from '../hooks/useUsers';
 import { useViewParam, type DashboardView } from '../hooks/useViewParam';
@@ -18,6 +20,7 @@ import { PersonalBoard } from '../components/schedule/PersonalBoard';
 import { RefreshButton } from '../components/schedule/RefreshButton';
 import { ScheduleFormDialog } from '../components/schedule/ScheduleFormDialog';
 import { ScheduleSkeleton } from '../components/schedule/ScheduleSkeleton';
+import { SyncMembersDialog } from '../components/pages/dashboard/SyncMembersDialog';
 import { WeekSwitcher } from '../components/schedule/WeekSwitcher';
 import { Alert } from '../components/ui/Alert';
 import { Badge } from '../components/ui/Badge';
@@ -48,7 +51,8 @@ export default function DashboardPage() {
   const { week: weekParam, setWeek } = useWeekParam(semesterQuery.data?.semester.totalWeeks);
   const { view, userId, setView, setUserId } = useViewParam();
 
-  const aggregateQuery = useAggregateBoard(weekParam);
+  const { userIds: syncedIds, setSyncedIds } = useSyncedMembers();
+  const aggregateQuery = useAggregateBoardWithin(weekParam, syncedIds);
   const board = aggregateQuery.data;
   const semester = semesterQuery.data?.semester;
   const semesterWeeks = semesterQuery.data?.weeks ?? [];
@@ -61,6 +65,7 @@ export default function DashboardPage() {
   const [drawerCell, setDrawerCell] = useState<DrawerState | null>(null);
   const [formDialog, setFormDialog] = useState<FormDialogState | null>(null);
   const [batchMode, setBatchMode] = useState(false);
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
   const [cellFilter, setCellFilter] = useState<CellFilter>('all');
   const [selected, setSelected] = useState<Set<string>>(() => new Set<string>());
   const dragRef = useRef<{ active: boolean; mode: 'add' | 'remove' } | null>(null);
@@ -286,6 +291,14 @@ export default function DashboardPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <RefreshButton />
+            <Button
+              variant={syncedIds ? 'soft' : 'secondary'}
+              iconLeft={<UserRoundCheck className="h-4 w-4" aria-hidden />}
+              onClick={() => setSyncDialogOpen(true)}
+              title={syncedIds ? '当前仅汇总所选成员' : '默认汇总组织全部成员'}
+            >
+              {syncedIds ? `同步成员 · ${syncedIds.length}` : '同步成员'}
+            </Button>
             <SegmentedControl<DashboardView>
               ariaLabel="视图切换"
               value={view}
@@ -587,6 +600,18 @@ export default function DashboardPage() {
           onSaved={handleDialogSaved}
         />
       ) : null}
+
+      <SyncMembersDialog
+        open={syncDialogOpen}
+        users={activeUsers}
+        initialIds={syncedIds}
+        onClose={() => setSyncDialogOpen(false)}
+        onConfirm={(ids) => {
+          setSyncedIds(ids);
+          setSyncDialogOpen(false);
+          setStatusMessage(ids === null ? '已恢复为组织全部成员' : `已同步 ${ids.length} 位成员的空闲`);
+        }}
+      />
 
       {batchMode && view === 'aggregate' ? (
         <BatchSelectBar

@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
@@ -39,6 +40,43 @@ export function migrate(db: DatabaseSyncInstance): void {
     const row = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);
     return Boolean(row);
   };
+
+  // migrate() is also callable directly against a legacy database.
+  if (!hasTable('organization')) {
+    const schema = readFileSync(join(here, 'schema.sql'), 'utf8');
+    db.exec(schema.slice(schema.indexOf('CREATE TABLE IF NOT EXISTS organization'), schema.indexOf('CREATE TABLE IF NOT EXISTS slot_template')));
+  }
+  // Disable FK enforcement outside the transaction while rebuilding referenced tables.
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    let org = db.prepare('SELECT id FROM organization ORDER BY id LIMIT 1').get() as { id: number } | undefined;
+    if (!org) {
+      const admin = hasTable('auth_account') && columnsOf('auth_account').has('role') && columnsOf('auth_account').has('last_login_at')
+        ? db.prepare("SELECT email FROM auth_account WHERE role = 'admin' ORDER BY (last_login_at IS NULL), last_login_at DESC, email LIMIT 1").get() as { email: string } | undefined : undefined;
+      const result = db.prepare('INSERT INTO organization(name, code, owner_email) VALUES (?, ?, ?)').run('我的组织', randomBytes(4).toString('hex').toUpperCase(), admin?.email ?? process.env.ADMIN_EMAIL ?? '380154843@qq.com');
+      org = { id: Number(result.lastInsertRowid) };
+    }
+    db.prepare("INSERT OR IGNORE INTO org_member(org_id,email,role,status) SELECT id,owner_email,'owner','approved' FROM organization").run();
+    for (const table of ['semester', 'slot_template', 'app_user']) {
+      if (!columnsOf(table).has('org_id')) db.exec('ALTER TABLE ' + table + ' ADD COLUMN org_id INTEGER NOT NULL DEFAULT ' + org.id + ' REFERENCES organization(id) ON DELETE CASCADE');
+    }
+    // Rebuild both formerly globally unique name tables, preserving IDs and FK targets.
+    for (const table of ['app_user', 'slot_template']) {
+      const definition = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").get(table) as { sql: string }).sql;
+      if (!/UNIQUE\s*\(org_id,\s*name\)/i.test(definition)) {
+        const sql = definition.replace('CREATE TABLE ' + table, 'CREATE TABLE ' + table + '_new').replace('CREATE TABLE IF NOT EXISTS ' + table, 'CREATE TABLE ' + table + '_new').replace(/NOT NULL UNIQUE/g, 'NOT NULL');
+        db.exec(sql.slice(0, sql.lastIndexOf(')')) + ', UNIQUE(org_id, name))');
+        const columns = [...columnsOf(table)].join(',');
+        db.exec('INSERT INTO ' + table + '_new (' + columns + ') SELECT ' + columns + ' FROM ' + table);
+        db.exec('DROP TABLE ' + table);
+        db.exec('ALTER TABLE ' + table + '_new RENAME TO ' + table);
+      }
+    }
+    db.exec('DROP INDEX IF EXISTS ux_semester_active; CREATE UNIQUE INDEX ux_semester_active ON semester(org_id) WHERE is_active = 1; CREATE INDEX IF NOT EXISTS ix_app_user_active ON app_user(org_id,is_active,sort_order)');
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  finally { db.exec('PRAGMA foreign_keys = ON'); }
 
   if (hasTable('auth_account')) {
     const columns = columnsOf('auth_account');

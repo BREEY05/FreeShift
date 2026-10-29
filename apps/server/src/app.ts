@@ -14,6 +14,7 @@ import { recommendRoutes } from './routes/recommend.ts';
 import { statsRoutes } from './routes/stats.ts';
 import { dataRoutes } from './routes/data.ts';
 import { installAuth } from './routes/auth.ts';
+import { orgRoutes } from './routes/org.ts';
 
 export const APP_VERSION = process.env.APP_VERSION ?? '1.0.0';
 
@@ -137,6 +138,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           timezone: process.env.TZ ?? 'Asia/Shanghai',
         },
       }));
+      await api.register(orgRoutes, { prefix: '/org' });
       await api.register(semesterRoutes, { prefix: '/semester' });
       await api.register(templateRoutes, { prefix: '/templates' });
       await api.register(slotRoutes, { prefix: '/slots' });

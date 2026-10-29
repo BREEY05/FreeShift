@@ -4,7 +4,7 @@ import type { AppUser } from '@freeshift/shared';
 import { all, get, run, transaction, type SqlValue } from '../db/index.ts';
 import { AppError, notFound } from '../lib/errors.ts';
 import { mapUser, type UserRow } from '../lib/mappers.ts';
-import { getUserById } from './context.ts';
+import { defaultOrgId, getUserById } from './context.ts';
 
 export const userInputSchema = z.object({
   name: z
@@ -31,48 +31,48 @@ export const userOrderSchema = z.object({
 export type UserInputParsed = z.infer<typeof userInputSchema>;
 export type UserPatchParsed = z.infer<typeof userPatchSchema>;
 
-function countUsers(): number {
-  const row = get<{ n: number }>('SELECT COUNT(*) AS n FROM app_user');
+function countUsers(orgId: number): number {
+  const row = get<{ n: number }>('SELECT COUNT(*) AS n FROM app_user WHERE org_id = ?', [orgId]);
   return Number(row?.n ?? 0);
 }
 
-function nextSortOrder(): number {
+function nextSortOrder(orgId: number): number {
   const row = get<{ m: number | null }>('SELECT MAX(sort_order) AS m FROM app_user');
   return Number(row?.m ?? 0) + 1;
 }
 
-function findUserRowByName(name: string, excludeId?: number): UserRow | undefined {
+function findUserRowByName(name: string, excludeId: number | undefined, orgId: number): UserRow | undefined {
   if (excludeId) {
-    return get<UserRow>('SELECT * FROM app_user WHERE name = ? AND id <> ?', [name, excludeId]);
+    return get<UserRow>('SELECT * FROM app_user WHERE name = ? AND id <> ? AND org_id = ?', [name, excludeId, orgId]);
   }
-  return get<UserRow>('SELECT * FROM app_user WHERE name = ?', [name]);
+  return get<UserRow>('SELECT * FROM app_user WHERE name = ? AND org_id = ?', [name, orgId]);
 }
 
-function assertNameAvailable(name: string, excludeId?: number): void {
-  if (findUserRowByName(name, excludeId)) {
+function assertNameAvailable(name: string, excludeId: number | undefined, orgId: number): void {
+  if (findUserRowByName(name, excludeId, orgId)) {
     throw new AppError(409, 'USER_EXISTS', '用户名已存在：' + name);
   }
 }
 
-export function listUsers(includeInactive = false): AppUser[] {
+export function listUsers(includeInactive = false, orgId = defaultOrgId()): AppUser[] {
   const rows = includeInactive
-    ? all<UserRow>('SELECT * FROM app_user ORDER BY sort_order ASC, id ASC')
-    : all<UserRow>('SELECT * FROM app_user WHERE is_active = 1 ORDER BY sort_order ASC, id ASC');
+    ? all<UserRow>('SELECT * FROM app_user WHERE org_id = ? ORDER BY sort_order ASC, id ASC', [orgId])
+    : all<UserRow>('SELECT * FROM app_user WHERE is_active = 1 AND org_id = ? ORDER BY sort_order ASC, id ASC', [orgId]);
   return rows.map(mapUser);
 }
 
-export function createUser(input: UserInputParsed): AppUser {
+export function createUser(input: UserInputParsed, orgId = defaultOrgId()): AppUser {
   const name = input.name.trim();
-  assertNameAvailable(name);
-  const color = input.color ?? DEFAULT_USER_COLORS[countUsers() % DEFAULT_USER_COLORS.length];
-  const sortOrder = nextSortOrder();
+  assertNameAvailable(name, undefined, orgId);
+  const color = input.color ?? DEFAULT_USER_COLORS[countUsers(orgId) % DEFAULT_USER_COLORS.length];
+  const sortOrder = nextSortOrder(orgId);
   try {
     const result = run(
-      `INSERT INTO app_user (name, color, note, is_active, sort_order)
-       VALUES (?, ?, ?, ?, ?)`,
-      [name, color, input.note ?? '', input.isActive === false ? 0 : 1, sortOrder],
+      `INSERT INTO app_user (org_id, name, color, note, is_active, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [orgId, name, color, input.note ?? '', input.isActive === false ? 0 : 1, sortOrder],
     );
-    return getUserById(result.lastInsertRowid);
+    return getUserById(result.lastInsertRowid, orgId);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (/UNIQUE|constraint/i.test(message)) {
@@ -82,10 +82,10 @@ export function createUser(input: UserInputParsed): AppUser {
   }
 }
 
-export function updateUser(id: number, patch: UserPatchParsed): AppUser {
-  const existing = getUserById(id);
+export function updateUser(id: number, patch: UserPatchParsed, orgId = defaultOrgId()): AppUser {
+  const existing = getUserById(id, orgId);
   const name = patch.name !== undefined ? patch.name.trim() : existing.name;
-  if (patch.name !== undefined) assertNameAvailable(name, id);
+  if (patch.name !== undefined) assertNameAvailable(name, id, orgId);
 
   const sets: string[] = [];
   const params: SqlValue[] = [];
@@ -117,12 +117,12 @@ export function updateUser(id: number, patch: UserPatchParsed): AppUser {
       throw error;
     }
   }
-  return getUserById(id);
+  return getUserById(id, orgId);
 }
 
 /** 默认软删除（is_active=0）；hard=true 时彻底删除并级联安排 */
-export function deleteUser(id: number, hard: boolean): void {
-  getUserById(id);
+export function deleteUser(id: number, hard: boolean, orgId = defaultOrgId()): void {
+  getUserById(id, orgId);
   if (!hard) {
     run("UPDATE app_user SET is_active = 0, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?", [id]);
     return;
@@ -133,7 +133,7 @@ export function deleteUser(id: number, hard: boolean): void {
   });
 }
 
-export function reorderUsers(ids: number[]): AppUser[] {
+export function reorderUsers(ids: number[], orgId = defaultOrgId()): AppUser[] {
   const unique = Array.from(new Set(ids));
   if (unique.length !== ids.length) {
     throw new AppError(422, 'VALIDATION_ERROR', '用户顺序中存在重复 ID', [
@@ -141,7 +141,7 @@ export function reorderUsers(ids: number[]): AppUser[] {
     ]);
   }
   for (const id of unique) {
-    const row = get<UserRow>('SELECT id FROM app_user WHERE id = ?', [id]);
+    const row = get<UserRow>('SELECT id FROM app_user WHERE id = ? AND org_id = ?', [id, orgId]);
     if (!row) throw notFound('用户');
   }
   transaction(() => {
@@ -152,5 +152,5 @@ export function reorderUsers(ids: number[]): AppUser[] {
       ]);
     });
   });
-  return listUsers(true);
+  return listUsers(true, orgId);
 }

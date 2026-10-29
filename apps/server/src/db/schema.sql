@@ -2,12 +2,31 @@ PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 PRAGMA busy_timeout = 5000;
 
+CREATE TABLE IF NOT EXISTS organization (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  code TEXT NOT NULL UNIQUE,
+  owner_email TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE TABLE IF NOT EXISTS org_member (
+  org_id INTEGER NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('owner', 'member')),
+  status TEXT NOT NULL CHECK (status IN ('pending', 'approved')),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  PRIMARY KEY (org_id, email)
+);
+CREATE INDEX IF NOT EXISTS ix_org_member_email ON org_member(email);
+
 CREATE TABLE IF NOT EXISTS slot_template (
+  org_id INTEGER NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  name        TEXT    NOT NULL UNIQUE,
+  name        TEXT    NOT NULL,
   description TEXT    NOT NULL DEFAULT '',
   is_preset   INTEGER NOT NULL DEFAULT 0 CHECK (is_preset IN (0, 1)),
-  created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  UNIQUE(org_id, name)
 );
 
 CREATE TABLE IF NOT EXISTS time_slot (
@@ -25,6 +44,7 @@ CREATE TABLE IF NOT EXISTS time_slot (
 CREATE INDEX IF NOT EXISTS ix_time_slot_template ON time_slot(template_id, sort_order);
 
 CREATE TABLE IF NOT EXISTS semester (
+  org_id INTEGER NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
   id                 INTEGER PRIMARY KEY AUTOINCREMENT,
   name               TEXT    NOT NULL,
   start_date         TEXT    NOT NULL,
@@ -35,17 +55,19 @@ CREATE TABLE IF NOT EXISTS semester (
   created_at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   updated_at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
-CREATE UNIQUE INDEX IF NOT EXISTS ux_semester_active ON semester(is_active) WHERE is_active = 1;
+-- The organization-scoped active index is installed after migration.
 
 CREATE TABLE IF NOT EXISTS app_user (
+  org_id INTEGER NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  name       TEXT    NOT NULL UNIQUE,
+  name       TEXT    NOT NULL,
   color      TEXT    NOT NULL DEFAULT '#6366F1' CHECK (length(color) = 7),
   note       TEXT    NOT NULL DEFAULT '',
   is_active  INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  updated_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  updated_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  UNIQUE(org_id, name)
 );
 CREATE INDEX IF NOT EXISTS ix_app_user_active ON app_user(is_active, sort_order);
 

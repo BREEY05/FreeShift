@@ -1,3 +1,4 @@
+import { requireOrg } from '../services/orgContext.ts';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { buildWeeks } from '@freeshift/shared';
@@ -62,20 +63,20 @@ function rebuildSemesterOccurrences(semesterId: number, totalWeeks: number, week
 }
 
 export const semesterRoutes: FastifyPluginAsync = async (app) => {
-  app.get('/', async () => {
-    const semester = getActiveSemester();
+  app.get('/', async (request) => {
+    const semester = getActiveSemester(requireOrg(request));
     return { data: overviewOf(semester) };
   });
 
-  app.get('/weeks', async () => {
-    const semester = getActiveSemester();
+  app.get('/weeks', async (request) => {
+    const semester = getActiveSemester(requireOrg(request));
     const weeks: WeekInfo[] = buildWeeks(semester);
     return { data: { weeks } };
   });
 
   app.put('/', async (request) => {
     const patch = parseBody(semesterPatchSchema, request.body ?? {});
-    const current = getActiveSemester();
+    const current = getActiveSemester(requireOrg(request));
 
     const name = patch.name ?? current.name;
     const startDate = patch.startDate ?? current.startDate;
@@ -99,29 +100,29 @@ export const semesterRoutes: FastifyPluginAsync = async (app) => {
       }
     });
 
-    return { data: overviewOf(getSemesterById(current.id)) };
+    return { data: overviewOf(getSemesterById(current.id, requireOrg(request))) };
   });
 
   app.post('/', async (request, reply) => {
     const input = parseBody(semesterCreateSchema, request.body ?? {});
-    const active = get<SemesterRow>('SELECT * FROM semester WHERE is_active = 1 LIMIT 1');
+    const active = get<SemesterRow>('SELECT * FROM semester WHERE is_active = 1 AND org_id = ? LIMIT 1', [requireOrg(request)]);
     const templateId = input.activeTemplateId ?? (active ? (active.active_template_id === null ? null : Number(active.active_template_id)) : null);
     if (templateId !== null) {
-      const template = get<{ id: number }>('SELECT id FROM slot_template WHERE id = ?', [templateId]);
+      const template = get<{ id: number }>('SELECT id FROM slot_template WHERE id = ? AND org_id = ?', [templateId, requireOrg(request)]);
       if (!template) throw notFound('时间段模板');
     }
 
     const semesterId = transaction(() => {
-      run("UPDATE semester SET is_active = 0, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE is_active = 1");
+      run("UPDATE semester SET is_active = 0, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE is_active = 1 AND org_id = ?", [requireOrg(request)]);
       const result = run(
-        `INSERT INTO semester (name, start_date, total_weeks, week1_parity, active_template_id, is_active)
-         VALUES (?, ?, ?, ?, ?, 1)`,
-        [input.name, input.startDate, input.totalWeeks, input.week1Parity ?? 'odd', templateId],
+        `INSERT INTO semester (name, start_date, total_weeks, week1_parity, active_template_id, is_active, org_id)
+         VALUES (?, ?, ?, ?, ?, 1, ?)`,
+        [input.name, input.startDate, input.totalWeeks, input.week1Parity ?? 'odd', templateId, requireOrg(request)],
       );
       return result.lastInsertRowid;
     });
 
-    const created = getSemesterById(semesterId);
+    const created = getSemesterById(semesterId, requireOrg(request));
     if (!created.isActive) {
       throw new AppError(500, 'INTERNAL_ERROR', '学期启用状态写入失败');
     }

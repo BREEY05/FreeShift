@@ -5,21 +5,27 @@ import { AppError, notFound } from '../lib/errors.ts';
 import type { SemesterRow, SlotRow, UserRow } from '../lib/mappers.ts';
 import { mapSemester, mapSlot, mapUser } from '../lib/mappers.ts';
 
-export function getActiveSemester(): Semester {
-  const row = get<SemesterRow>('SELECT * FROM semester WHERE is_active = 1 LIMIT 1');
+export function defaultOrgId(): number {
+  const row = get<{id: number}>('SELECT id FROM organization ORDER BY id LIMIT 1');
+  if (!row) throw notFound('组织');
+  return Number(row.id);
+}
+
+export function getActiveSemester(orgId = defaultOrgId()): Semester {
+  const row = get<SemesterRow>('SELECT * FROM semester WHERE is_active = 1 AND org_id = ? LIMIT 1', [orgId]);
   if (!row) throw notFound('当前学期');
   return mapSemester(row);
 }
 
-export function getSemesterById(id: number): Semester {
-  const row = get<SemesterRow>('SELECT * FROM semester WHERE id = ?', [id]);
+export function getSemesterById(id: number, orgId = defaultOrgId()): Semester {
+  const row = get<SemesterRow>('SELECT * FROM semester WHERE id = ? AND org_id = ?', [id, orgId]);
   if (!row) throw notFound('学期');
   return mapSemester(row);
 }
 
 /** 未指定学期时取当前启用学期 */
-export function resolveSemester(semesterId?: number | null): Semester {
-  return semesterId ? getSemesterById(semesterId) : getActiveSemester();
+export function resolveSemester(semesterId?: number | null, orgId = defaultOrgId()): Semester {
+  return semesterId ? getSemesterById(semesterId, orgId) : getActiveSemester(orgId);
 }
 
 export function getTemplateSlots(templateId: number | null): TimeSlot[] {
@@ -32,13 +38,13 @@ export function getSemesterSlots(semester: Semester): TimeSlot[] {
   return getTemplateSlots(semester.activeTemplateId);
 }
 
-export function listActiveUsers(): AppUser[] {
-  const rows = all<UserRow>('SELECT * FROM app_user WHERE is_active = 1 ORDER BY sort_order ASC, id ASC');
+export function listActiveUsers(orgId = defaultOrgId()): AppUser[] {
+  const rows = all<UserRow>('SELECT * FROM app_user WHERE is_active = 1 AND org_id = ? ORDER BY sort_order ASC, id ASC', [orgId]);
   return rows.map(mapUser);
 }
 
-export function getUserById(id: number): AppUser {
-  const row = get<UserRow>('SELECT * FROM app_user WHERE id = ?', [id]);
+export function getUserById(id: number, orgId = defaultOrgId()): AppUser {
+  const row = get<UserRow>('SELECT * FROM app_user WHERE id = ? AND org_id = ?', [id, orgId]);
   if (!row) throw notFound('用户');
   return mapUser(row);
 }
@@ -71,8 +77,8 @@ export function resolveWeek(semester: Semester, weekNo?: number | null): WeekInf
   return found;
 }
 
-export function getActiveTemplateId(): number {
-  const semester = getActiveSemester();
+export function getActiveTemplateId(orgId = defaultOrgId()): number {
+  const semester = getActiveSemester(orgId);
   if (!semester.activeTemplateId) {
     throw new AppError(422, 'NO_ACTIVE_TEMPLATE', '当前学期尚未设置时间段模板');
   }

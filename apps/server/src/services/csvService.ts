@@ -1,7 +1,7 @@
 import { WEEKDAY_LABELS, WEEKDAY_ORDER } from '@freeshift/shared';
 import { all } from '../db/index.ts';
 import { badRequest } from '../lib/errors.ts';
-import { getActiveSemester, resolveWeek } from './context.ts';
+import { defaultOrgId, getActiveSemester, resolveWeek } from './context.ts';
 import { getAggregateBoard } from './aggregateService.ts';
 
 export const CSV_BOM = '\uFEFF';
@@ -102,8 +102,8 @@ export function parseCsv(text: string): string[][] {
   return rows;
 }
 
-function validateExportRange(fromWeek?: number, toWeek?: number): { from: number; to: number } {
-  const semester = getActiveSemester();
+function validateExportRange(fromWeek?: number, toWeek?: number, orgId?: number): { from: number; to: number } {
+  const semester = getActiveSemester(orgId ?? defaultOrgId());
   const from = fromWeek ?? 1;
   const to = toWeek ?? semester.totalWeeks;
   if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || from > to || to > semester.totalWeeks) {
@@ -114,18 +114,19 @@ function validateExportRange(fromWeek?: number, toWeek?: number): { from: number
 
 const SCHEDULE_HEADER = ['user', 'weekday', 'slot_label', 'start_week', 'end_week', 'parity', 'note'];
 
-/** 导出安排 CSV（user,weekday,slot_label,start_week,end_week,parity,note） */
-export function buildSchedulesCsv(fromWeek?: number, toWeek?: number): CsvExport {
-  const semester = getActiveSemester();
-  const { from, to } = validateExportRange(fromWeek, toWeek);
+/** 导出安排 CSV（user,weekday,slot_label,start_week,end_week,parity,note），只导当前组织成员的安排 */
+export function buildSchedulesCsv(fromWeek?: number, toWeek?: number, orgId?: number): CsvExport {
+  const org = orgId ?? defaultOrgId();
+  const semester = getActiveSemester(org);
+  const { from, to } = validateExportRange(fromWeek, toWeek, org);
   const rows = all<ScheduleExportRow>(
     `SELECT u.name AS name, s.weekday, ts.label AS slot_label, s.start_week, s.end_week, s.parity, s.note
        FROM schedule s
        JOIN app_user u ON u.id = s.user_id
        JOIN time_slot ts ON ts.id = s.slot_id
-      WHERE s.semester_id = ? AND s.start_week <= ? AND s.end_week >= ?
+      WHERE s.semester_id = ? AND s.start_week <= ? AND s.end_week >= ? AND u.org_id = ?
       ORDER BY u.sort_order ASC, u.id ASC, s.weekday ASC, ts.sort_order ASC, s.id ASC`,
-    [semester.id, to, from],
+    [semester.id, to, from, org],
   );
   const lines: (string | number)[][] = [SCHEDULE_HEADER];
   for (const row of rows) {
@@ -146,11 +147,12 @@ export function buildSchedulesCsv(fromWeek?: number, toWeek?: number): CsvExport
   };
 }
 
-/** 导出某周聚合表 CSV：首列时间段，周一到周日，格子内容“空闲 N/M” */
-export function buildBoardCsv(weekNo?: number): CsvExport {
-  const semester = getActiveSemester();
+/** 导出某周聚合表 CSV：首列时间段，周一到周日，格子内容“空闲 N/M”，口径为当前组织成员 */
+export function buildBoardCsv(weekNo?: number, orgId?: number): CsvExport {
+  const org = orgId ?? defaultOrgId();
+  const semester = getActiveSemester(org);
   const week = resolveWeek(semester, weekNo);
-  const board = getAggregateBoard({ week: week.weekNo });
+  const board = getAggregateBoard({ week: week.weekNo }, org);
   const totalUsers = board.users.length;
   const cellByKey = new Map(board.cells.map((cell) => [cell.weekday + ':' + cell.slotId, cell]));
   const lines: (string | number)[][] = [['时间段', ...WEEKDAY_ORDER.map((weekday) => WEEKDAY_LABELS[weekday])]];

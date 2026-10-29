@@ -1,0 +1,15 @@
+import { randomBytes } from 'node:crypto';
+import { all, get, getDb, run, transaction } from '../db/index.ts';
+import { seedDefaults } from '../db/seed-defaults.ts';
+import { AppError, notFound } from '../lib/errors.ts';
+interface OrgRow { id:number; name:string; code:string; owner_email:string; created_at:string }
+interface MemberRow { org_id:number; email:string; role:'owner'|'member'; status:'pending'|'approved'; created_at:string }
+export const orgById = (id:number) => { const r=get<OrgRow>('SELECT * FROM organization WHERE id=?',[id]); if(!r) throw notFound('组织'); return {id:Number(r.id),name:r.name,code:r.code,ownerEmail:r.owner_email,createdAt:r.created_at}; };
+export function members(orgId:number, status:'pending'|'approved'='approved') { return all<MemberRow>('SELECT * FROM org_member WHERE org_id=? AND status=? ORDER BY created_at,email',[orgId,status]).map(r=>({orgId:Number(r.org_id),email:r.email,role:r.role,status:r.status,createdAt:r.created_at})); }
+export function ownerOnly(orgId:number,email:string):void {if(orgById(orgId).ownerEmail!==email)throw new AppError(403,'FORBIDDEN','仅组织负责人可操作');}
+export function orgDetails(orgId:number,email:string) { const org=orgById(orgId);return {org,members:members(orgId),requests:org.ownerEmail===email?members(orgId,'pending'):[]}; }
+export function createOrg(name:string,email:string) {const id=transaction(()=>{const id=run('INSERT INTO organization(name,code,owner_email) VALUES(?,?,?)',[name,randomBytes(4).toString('hex').toUpperCase(),email]).lastInsertRowid;run("INSERT INTO org_member(org_id,email,role,status) VALUES(?,?,'owner','approved')",[id,email]);seedDefaults(getDb());return id;});return orgDetails(id,email);}
+export function joinOrg(code:string,email:string) {const r=get<OrgRow>('SELECT * FROM organization WHERE code=?',[code.toUpperCase()]);if(!r)throw notFound('组织');run("INSERT OR IGNORE INTO org_member(org_id,email,role,status) VALUES(?,?,'member','pending')",[r.id,email]);const member=get<MemberRow>('SELECT * FROM org_member WHERE org_id=? AND email=?',[r.id,email])!;return {org:orgById(r.id),status:member.status};}
+export function reviewMember(orgId:number,actor:string,email:string,approve:boolean):void {ownerOnly(orgId,actor);const member=get<MemberRow>('SELECT * FROM org_member WHERE org_id=? AND email=?',[orgId,email]);if(!member||member.status!=='pending')throw notFound('加入申请');if(approve)run("UPDATE org_member SET status='approved' WHERE org_id=? AND email=?",[orgId,email]);else run('DELETE FROM org_member WHERE org_id=? AND email=?',[orgId,email]);}
+export function removeMember(orgId:number,actor:string,email:string):void {ownerOnly(orgId,actor);if(orgById(orgId).ownerEmail===email)throw new AppError(409,'OWNER_CANNOT_LEAVE','负责人不能退出组织');run('DELETE FROM org_member WHERE org_id=? AND email=?',[orgId,email]);}
+export function leaveOrg(orgId:number,email:string):void {if(orgById(orgId).ownerEmail===email)throw new AppError(409,'OWNER_CANNOT_LEAVE','负责人不能退出组织');run('DELETE FROM org_member WHERE org_id=? AND email=?',[orgId,email]);}

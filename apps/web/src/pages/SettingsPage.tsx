@@ -2,6 +2,7 @@ import { AlertTriangle, Database, Settings as SettingsIcon } from 'lucide-react'
 import { useEffect, useState } from 'react';
 import { ApiError } from '../api/client';
 import { DataTransferPanel } from '../components/pages/settings/DataTransferPanel';
+import { ResetDataPanel } from '../components/pages/settings/ResetDataPanel';
 import { RuntimeInfoPanel } from '../components/pages/settings/RuntimeInfoPanel';
 import { SemesterForm } from '../components/pages/settings/SemesterForm';
 import { Alert } from '../components/ui/Alert';
@@ -107,20 +108,23 @@ export default function SettingsPage() {
               <h2 className="text-xs font-semibold text-danger">危险区</h2>
             </div>
             <div className="space-y-3 px-4 py-3">
-              <Alert tone="danger" title="重置数据需要服务器操作">
-                为避免误操作，界面不提供一键清空或删库。重置或恢复数据请在服务器侧执行。
-              </Alert>
-              <ol className="list-decimal space-y-1.5 pl-4 text-2xs leading-5 text-muted">
-                <li>停止 API 服务（如 docker compose stop api，或结束对应 Node 进程）。</li>
-                <li>
-                  备份并删除数据库文件：默认 <code className="rounded bg-canvas px-1 py-0.5 text-ink">data/freeshift.db</code>
-                  （若存在 -wal / -shm 文件一并删除）。
-                </li>
-                <li>重新启动服务，迁移与种子数据会自动重建；也可用备份文件覆盖恢复。</li>
-              </ol>
-              <p className="text-2xs leading-5 text-subtle">
-                删除数据库会清空全部学期、模板、成员与安排数据，且不可撤销；建议先导出 CSV 或在服务器上备份。
-              </p>
+              <ResetDataPanel
+                onDone={(message) => {
+                  setStatusMessage(message);
+                  void semesterQuery.refetch();
+                }}
+              />
+              <details className="rounded-control border border-line bg-canvas px-3 py-2.5">
+                <summary className="cursor-pointer text-2xs font-medium text-muted">服务器侧彻底重建数据库（运维人员）</summary>
+                <ol className="mt-2 list-decimal space-y-1.5 pl-4 text-2xs leading-5 text-muted">
+                  <li>停止 API 服务（如 docker compose stop api，或结束对应 Node 进程）。</li>
+                  <li>
+                    备份并删除数据库文件：默认 <code className="rounded bg-surface px-1 py-0.5 text-ink">data/freeshift.db</code>
+                    （若存在 -wal / -shm 文件一并删除）。
+                  </li>
+                  <li>重新启动服务，迁移与种子数据会自动重建；也可用备份文件覆盖恢复。</li>
+                </ol>
+              </details>
             </div>
           </Card>
         </>

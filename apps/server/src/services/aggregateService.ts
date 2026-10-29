@@ -12,16 +12,10 @@ import type {
 import { WEEKDAY_ORDER, isWeekIncluded } from '@freeshift/shared';
 import type { SqlValue } from '../db/index.ts';
 import { all } from '../db/index.ts';
-import { badRequest } from '../lib/errors.ts';
+import { badRequest, notFound } from '../lib/errors.ts';
 import type { ScheduleRow } from '../lib/mappers.ts';
 import { mapSchedule } from '../lib/mappers.ts';
-import {
-  getActiveSemester,
-  getSemesterSlots,
-  getUserById,
-  listActiveUsers,
-  resolveWeek,
-} from './context.ts';
+import { defaultOrgId, getActiveSemester, getSemesterSlots, getUserById, listActiveUsers, resolveWeek } from './context.ts';
 
 export type BoardFilter = 'all' | 'full_free' | 'partial';
 
@@ -42,19 +36,32 @@ function cellKey(weekday: number, slotId: number): string {
   return weekday + ':' + slotId;
 }
 
+function resolveOrgId(orgId?: number): number {
+  return orgId ?? defaultOrgId();
+}
+
+function placeholders(count: number): string {
+  return Array.from({ length: count }, () => '?').join(', ');
+}
+
 /**
  * 一次性取回某周全部占用点（可按用户过滤），避免逐格查询（禁止 N+1）。
  * 返回 cellKey -> 占用用户 id 集合。
+ * 传入 orgId（或省略时取 defaultOrgId）后只统计该组织的用户，避免跨组织串数据。
  */
 export function loadWeekOccupancy(
   semesterId: number,
   weekNo: number,
   userIds?: number[],
+  orgId?: number,
 ): Map<string, Set<number>> {
-  const params: SqlValue[] = [semesterId, weekNo];
-  let sql = 'SELECT weekday, slot_id, user_id FROM schedule_occurrence WHERE semester_id = ? AND week_no = ?';
+  const org = resolveOrgId(orgId);
+  const params: SqlValue[] = [semesterId, weekNo, org];
+  let sql =
+    'SELECT o.weekday, o.slot_id, o.user_id FROM schedule_occurrence o JOIN app_user u ON u.id = o.user_id' +
+    ' WHERE o.semester_id = ? AND o.week_no = ? AND u.org_id = ?';
   if (userIds && userIds.length > 0) {
-    sql += ' AND user_id IN (' + userIds.map(() => '?').join(', ') + ')';
+    sql += ' AND o.user_id IN (' + placeholders(userIds.length) + ')';
     params.push(...userIds);
   }
   const rows = all<OccurrenceRow>(sql, params);
@@ -80,21 +87,22 @@ export function filterBoardCells(cells: BoardCell[], filter: BoardFilter): Board
 
 /**
  * 主界面聚合：slots / users 决定完整网格，occupancy 只查一次，
- * 每格的 freeUserIds 与 freeCount 同源。
+ * 每格的 freeUserIds 与 freeCount 同源。users 一律限定为当前组织的启用用户。
  */
-export function getAggregateBoard(query: AggregateBoardQuery = {}): AggregateBoard {
-  const semester = getActiveSemester();
+export function getAggregateBoard(query: AggregateBoardQuery = {}, orgId?: number): AggregateBoard {
+  const org = resolveOrgId(orgId);
+  const semester = getActiveSemester(org);
   const week = resolveWeek(semester, query.week);
   const allSlots = getSemesterSlots(semester);
   const dayParts = query.dayParts && query.dayParts.length > 0 ? new Set(query.dayParts) : null;
   const slots = dayParts ? allSlots.filter((slot) => dayParts.has(slot.dayPart)) : allSlots;
 
-  const activeUsers = listActiveUsers();
+  const activeUsers = listActiveUsers(org);
   const idFilter = query.userIds && query.userIds.length > 0 ? new Set(query.userIds) : null;
   const users = idFilter ? activeUsers.filter((user) => idFilter.has(user.id)) : activeUsers;
   const scopedUserIds = users.map((user) => user.id);
 
-  const occupancy = loadWeekOccupancy(semester.id, week.weekNo, idFilter ? scopedUserIds : undefined);
+  const occupancy = loadWeekOccupancy(semester.id, week.weekNo, scopedUserIds, org);
 
   const cells: BoardCell[] = [];
   for (const weekday of WEEKDAY_ORDER) {
@@ -126,11 +134,16 @@ export function getAggregateBoard(query: AggregateBoardQuery = {}): AggregateBoa
   };
 }
 
-export function getCellDetail(params: { week?: number; weekday: number; slotId: number }): CellDetail {
+/** 单元格详情：只投影当前组织的启用用户，跨组织用户不可见 */
+export function getCellDetail(
+  params: { week?: number; weekday: number; slotId: number },
+  orgId?: number,
+): CellDetail {
   if (!Number.isInteger(params.weekday) || params.weekday < 1 || params.weekday > 7) {
     throw badRequest('weekday 必须为 1-7 的整数');
   }
-  const semester = getActiveSemester();
+  const org = resolveOrgId(orgId);
+  const semester = getActiveSemester(org);
   const week = resolveWeek(semester, params.week);
   const slots = getSemesterSlots(semester);
   const slot = slots.find((item) => item.id === params.slotId);
@@ -139,8 +152,8 @@ export function getCellDetail(params: { week?: number; weekday: number; slotId: 
       { path: 'slot_id', message: '时间段不属于当前启用模板' },
     ]);
   }
-  const users = listActiveUsers();
-  const occupancy = loadWeekOccupancy(semester.id, week.weekNo);
+  const users = listActiveUsers(org);
+  const occupancy = loadWeekOccupancy(semester.id, week.weekNo, users.map((user) => user.id), org);
   const occupiedSet = occupancy.get(cellKey(params.weekday, slot.id)) ?? new Set<number>();
   const freeUsers: AppUser[] = [];
   const occupiedUsers: AppUser[] = [];
@@ -159,11 +172,12 @@ export function getCellDetail(params: { week?: number; weekday: number; slotId: 
 
 /**
  * 个人视图：用 schedule 区间 + 单双周规则命中该周占用，
- * scheduleId 指向可编辑的原始 schedule。
+ * scheduleId 指向可编辑的原始 schedule。目标用户必须属于当前组织，否则 404。
  */
-export function getPersonalBoard(userId: number, weekNo?: number): PersonalBoard {
-  const user = getUserById(userId);
-  const semester = getActiveSemester();
+export function getPersonalBoard(userId: number, weekNo?: number, orgId?: number): PersonalBoard {
+  const org = resolveOrgId(orgId);
+  const user = getUserById(userId, org);
+  const semester = getActiveSemester(org);
   const week = resolveWeek(semester, weekNo);
   const slots = getSemesterSlots(semester);
   const templateId = semester.activeTemplateId ?? -1;
@@ -204,15 +218,22 @@ export function getPersonalBoard(userId: number, weekNo?: number): PersonalBoard
   return { week, semester, user, slots, cells };
 }
 
-/** 个人区间安排列表（编辑用），默认整个学期；按周区间重叠过滤 */
-export function listUserSchedules(userId: number, fromWeek?: number, toWeek?: number): Schedule[] {
-  const semester = getActiveSemester();
-  getUserById(userId);
+/** 个人区间安排列表（编辑用），默认整个学期；按周区间重叠过滤。目标用户必须属于当前组织 */
+export function listUserSchedules(
+  userId: number,
+  fromWeek?: number,
+  toWeek?: number,
+  orgId?: number,
+): Schedule[] {
+  const org = resolveOrgId(orgId);
+  const semester = getActiveSemester(org);
+  if (!Number.isInteger(userId) || userId <= 0) throw notFound('用户');
   const from = fromWeek ?? 1;
   const to = toWeek ?? semester.totalWeeks;
   if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || from > to || to > semester.totalWeeks) {
     throw badRequest('周次范围不合法：' + from + ' ~ ' + to);
   }
+  getUserById(userId, org);
   const templateId = semester.activeTemplateId ?? -1;
   const rows = all<ScheduleRow>(
     `SELECT s.* FROM schedule s

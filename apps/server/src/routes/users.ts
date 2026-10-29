@@ -1,3 +1,4 @@
+import { requireOrg } from '../services/orgContext.ts';
 import type { FastifyPluginAsync } from 'fastify';
 import { toBool, toId } from '../lib/params.ts';
 import { parseBody } from '../lib/validate.ts';
@@ -17,36 +18,36 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
   app.get('/', async (request) => {
     const query = request.query as Record<string, unknown>;
     const includeInactive = toBool(query.include_inactive) ?? false;
-    return { data: { users: listUsers(includeInactive) } };
+    return { data: { users: listUsers(includeInactive, requireOrg(request)) } };
   });
 
   app.put('/order', async (request) => {
     const input = parseBody(userOrderSchema, request.body ?? {});
-    return { data: { users: reorderUsers(input.ids) } };
+    return { data: { users: reorderUsers(input.ids, requireOrg(request)) } };
   });
 
   app.get('/:id', async (request) => {
     const params = request.params as { id: string };
-    return { data: { user: getUserById(toId(params.id)) } };
+    return { data: { user: getUserById(toId(params.id), requireOrg(request)) } };
   });
 
   app.post('/', async (request, reply) => {
     const input = parseBody(userInputSchema, request.body ?? {});
     reply.status(201);
-    return { data: { user: createUser(input) } };
+    return { data: { user: createUser(input, requireOrg(request)) } };
   });
 
   app.patch('/:id', async (request) => {
     const params = request.params as { id: string };
     const patch = parseBody(userPatchSchema, request.body ?? {});
-    return { data: { user: updateUser(toId(params.id), patch) } };
+    return { data: { user: updateUser(toId(params.id), patch, requireOrg(request)) } };
   });
 
   app.delete('/:id', async (request, reply) => {
     const params = request.params as { id: string };
     const query = request.query as Record<string, unknown>;
     const hard = toBool(query.hard) ?? false;
-    deleteUser(toId(params.id), hard);
+    deleteUser(toId(params.id), hard, requireOrg(request));
     return reply.status(204).send();
   });
 };

@@ -23,7 +23,7 @@ import {
 import type { SqlValue } from '../db/index.ts';
 import { all, get, run } from '../db/index.ts';
 import { badRequest } from '../lib/errors.ts';
-import { getActiveSemester, getSemesterSlots, getUserById, listActiveUsers, resolveWeek } from './context.ts';
+import { defaultOrgId, getActiveSemester, getSemesterSlots, getUserById, listActiveUsers, resolveWeek } from './context.ts';
 import { expandWeeks } from './occurrence.ts';
 import { loadWeekOccupancy } from './aggregateService.ts';
 
@@ -108,6 +108,10 @@ function placeholders(count: number): string {
   return Array.from({ length: count }, () => '?').join(', ');
 }
 
+function resolveOrgId(orgId?: number): number {
+  return orgId ?? defaultOrgId();
+}
+
 /** 所选用户：缺省为全部启用用户；非法 id 抛 422 */
 export function resolveSelectedUsers(activeUsers: AppUser[], userIds?: number[]): AppUser[] {
   if (!userIds || userIds.length === 0) return activeUsers;
@@ -168,17 +172,18 @@ function loadUserCells(semesterId: number, weeks: number[], userId: number): Set
 }
 
 /** 算法 1：多人共同空闲块 */
-export function getCommonFreeBlocks(input: CommonFreeInput): FreeBlock[] {
-  const semester = getActiveSemester();
+export function getCommonFreeBlocks(input: CommonFreeInput, orgId?: number): FreeBlock[] {
+  const org = resolveOrgId(orgId);
+  const semester = getActiveSemester(org);
   const week = resolveWeek(semester, input.week);
   const slots = getSemesterSlots(semester);
   if (slots.length === 0) return [];
-  const selected = resolveSelectedUsers(listActiveUsers(), input.userIds);
+  const selected = resolveSelectedUsers(listActiveUsers(org), input.userIds);
   if (selected.length === 0) return [];
 
   const requireTimeAdjacent = input.requireTimeAdjacent !== false;
   const selectedIds = new Set(selected.map((user) => user.id));
-  const occupancy = loadWeekOccupancy(semester.id, week.weekNo, selected.map((user) => user.id));
+  const occupancy = loadWeekOccupancy(semester.id, week.weekNo, selected.map((user) => user.id), org);
   const sortOrderOfSlot = new Map(slots.map((slot) => [slot.id, slot.sortOrder]));
   const blocks: FreeBlock[] = [];
 
@@ -231,11 +236,13 @@ function occupancyRateFactor(count: number, userCount: number, weekCount: number
 }
 
 /** 算法 2：多因子加权推荐 */
-export function getScoredCells(input: ScoredInput = {}): ScoredCell[] {
-  const semester = getActiveSemester();
+export function getScoredCells(input: ScoredInput = {}, orgId?: number): ScoredCell[] {
+  const org = resolveOrgId(orgId);
+  const semester = getActiveSemester(org);
   const week = resolveWeek(semester, input.week);
   const slots = getSemesterSlots(semester);
-  const activeUsers = listActiveUsers();
+  // 用户集合严格限定为当前组织的启用成员，totalUsers / freeCount 均为组织内口径
+  const activeUsers = listActiveUsers(org);
   if (slots.length === 0 || activeUsers.length === 0) return [];
 
   const selected = resolveSelectedUsers(activeUsers, input.userIds);
@@ -245,7 +252,8 @@ export function getScoredCells(input: ScoredInput = {}): ScoredCell[] {
   const config = readRecommendConfig();
   const weights: FactorScores = { ...config.weights, ...(input.weights ?? {}) };
 
-  const perspective = input.perspectiveUserId ? [getUserById(input.perspectiveUserId)] : selected;
+  // 视角用户必须属于当前组织，否则 getUserById 抛 404
+  const perspective = input.perspectiveUserId ? [getUserById(input.perspectiveUserId, org)] : selected;
   const perspectiveIds = perspective.map((user) => user.id);
   const prevWeeks = historyWindow(week.weekNo, config, semester.totalWeeks);
   const recentWeeks = recentWindow(week.weekNo, config, semester.totalWeeks);
@@ -253,7 +261,7 @@ export function getScoredCells(input: ScoredInput = {}): ScoredCell[] {
   const recentCounts = loadWeekCounts(semester.id, recentWeeks, perspectiveIds);
 
   const activeIds = new Set(activeUsers.map((user) => user.id));
-  const occupancy = loadWeekOccupancy(semester.id, week.weekNo);
+  const occupancy = loadWeekOccupancy(semester.id, week.weekNo, activeUsers.map((user) => user.id), org);
   const candidates: CandidateCell[] = [];
   for (const weekday of WEEKDAY_ORDER) {
     for (const slot of slots) {
@@ -393,8 +401,9 @@ function buildReasons(candidate: CandidateCell, factors: FactorScores, totalUser
 }
 
 /** 算法 3：冲突最小化替代时段 */
-export function getAlternatives(input: AlternativesInput): AlternativesResult {
-  const semester = getActiveSemester();
+export function getAlternatives(input: AlternativesInput, orgId?: number): AlternativesResult {
+  const org = resolveOrgId(orgId);
+  const semester = getActiveSemester(org);
   const slots = getSemesterSlots(semester);
   const sourceSlot = slots.find((slot) => slot.id === input.slotId);
   if (!sourceSlot) {
@@ -403,7 +412,7 @@ export function getAlternatives(input: AlternativesInput): AlternativesResult {
   if (!Number.isInteger(input.weekday) || input.weekday < 1 || input.weekday > 7) {
     throw badRequest('weekday 必须为 1-7 的整数');
   }
-  getUserById(input.userId);
+  getUserById(input.userId, org);
   if (
     !Number.isInteger(input.startWeek) ||
     !Number.isInteger(input.endWeek) ||
@@ -415,7 +424,7 @@ export function getAlternatives(input: AlternativesInput): AlternativesResult {
   }
 
   const weeks = expandWeeks(semester.week1Parity, input.startWeek, input.endWeek, input.parity);
-  const activeUsers = listActiveUsers();
+  const activeUsers = listActiveUsers(org);
   const activeIds = activeUsers.map((user) => user.id);
   const totalUsers = activeUsers.length;
   const occupiedCounts = loadDistinctUserCounts(semester.id, weeks, activeIds);
@@ -463,7 +472,11 @@ export function getAlternatives(input: AlternativesInput): AlternativesResult {
   return result;
 }
 
-/** 读取 algo_config.weights_json，缺失字段用默认值补齐 */
+/**
+ * 读取 algo_config.weights_json，缺失字段用默认值补齐。
+ * TODO(多租户): algo_config 目前是全局单行（id = 1），尚未按 org_id 隔离；
+ * 推荐权重暂时在所有组织间共享，后续需要给 algo_config 增加 org_id 列并改用 (org_id) 主键。
+ */
 export function readRecommendConfig(): RecommendConfig {
   const row = get<{ weights_json: string }>('SELECT weights_json FROM algo_config WHERE id = 1');
   return parseRecommendConfig(row?.weights_json);

@@ -3,7 +3,7 @@ import type { BatchScheduleResult, ConflictDetail, Parity, Schedule, Semester } 
 import { get, run, all, transaction, type SqlValue } from '../db/index.ts';
 import { AppError, notFound } from '../lib/errors.ts';
 import { mapSchedule, type ScheduleRow, type SlotRow } from '../lib/mappers.ts';
-import { getActiveSemester, getSemesterById, getUserById } from './context.ts';
+import { defaultOrgId, getActiveSemester, getSemesterById, getUserById } from './context.ts';
 import { assertNoConflicts, detectConflicts, rethrowUniqueConflict, type ConflictQuery } from './conflictService.ts';
 import { expandWeeks, insertOccurrences, removeOccurrences, type ScheduleKey } from './occurrence.ts';
 
@@ -94,27 +94,27 @@ function assertWeekRange(startWeek: number, endWeek: number): void {
   }
 }
 
-function assertUserExists(userId: number): void {
-  getUserById(userId);
+function assertUserExists(userId: number, orgId = defaultOrgId()): void {
+  getUserById(userId, orgId);
 }
 
-function assertSlotExists(slotId: number): void {
-  const row = get<SlotRow>('SELECT * FROM time_slot WHERE id = ?', [slotId]);
+function assertSlotExists(slotId: number, orgId = defaultOrgId()): void {
+  const row = get<SlotRow>('SELECT ts.* FROM time_slot ts JOIN slot_template t ON t.id = ts.template_id WHERE ts.id = ? AND t.org_id = ?', [slotId, orgId]);
   if (!row) throw notFound('时间段');
 }
 
-function loadScheduleRow(id: number): ScheduleRow | undefined {
-  return get<ScheduleRow>('SELECT * FROM schedule WHERE id = ?', [id]);
+function loadScheduleRow(id: number, orgId = defaultOrgId()): ScheduleRow | undefined {
+  return get<ScheduleRow>('SELECT s.* FROM schedule s JOIN semester sem ON sem.id = s.semester_id WHERE s.id = ? AND sem.org_id = ?', [id, orgId]);
 }
 
-function requireScheduleRow(id: number): ScheduleRow {
-  const row = loadScheduleRow(id);
+function requireScheduleRow(id: number, orgId = defaultOrgId()): ScheduleRow {
+  const row = loadScheduleRow(id, orgId);
   if (!row) throw notFound('安排');
   return row;
 }
 
-function getScheduleOrThrow(id: number): Schedule {
-  return mapSchedule(requireScheduleRow(id));
+function getScheduleOrThrow(id: number, orgId = defaultOrgId()): Schedule {
+  return mapSchedule(requireScheduleRow(id, orgId));
 }
 
 function scheduleKeyOf(row: ScheduleRow, overrides: Partial<ScheduleKey> = {}): ScheduleKey {
@@ -161,12 +161,12 @@ function insertScheduleRecord(
   return result.lastInsertRowid;
 }
 
-export function getSchedule(id: number): Schedule {
-  return getScheduleOrThrow(id);
+export function getSchedule(id: number, orgId = defaultOrgId()): Schedule {
+  return getScheduleOrThrow(id, orgId);
 }
 
-export function listSchedules(filters: ScheduleFilters = {}): Schedule[] {
-  const semester = getActiveSemester();
+export function listSchedules(filters: ScheduleFilters = {}, orgId = defaultOrgId()): Schedule[] {
+  const semester = getActiveSemester(orgId);
   const conditions: string[] = ['semester_id = ?'];
   const params: SqlValue[] = [semester.id];
   if (filters.userId !== undefined) {
@@ -193,10 +193,10 @@ export function listSchedules(filters: ScheduleFilters = {}): Schedule[] {
   return rows.map(mapSchedule);
 }
 
-export function createSchedule(input: ScheduleInputParsed): Schedule {
-  const semester = getActiveSemester();
-  assertUserExists(input.userId);
-  assertSlotExists(input.slotId);
+export function createSchedule(input: ScheduleInputParsed, orgId = defaultOrgId()): Schedule {
+  const semester = getActiveSemester(orgId);
+  assertUserExists(input.userId, orgId);
+  assertSlotExists(input.slotId, orgId);
   const parity = input.parity ?? 'all';
   assertWeekRange(input.startWeek, input.endWeek);
 
@@ -234,15 +234,15 @@ export function createSchedule(input: ScheduleInputParsed): Schedule {
       });
       return id;
     });
-    return getScheduleOrThrow(scheduleId);
+    return getScheduleOrThrow(scheduleId, orgId);
   } catch (error) {
     return rethrowUniqueConflict(error, () => detectConflicts(conflictQuery));
   }
 }
 
-export function updateSchedule(id: number, patch: SchedulePatchParsed): Schedule {
-  const existing = requireScheduleRow(id);
-  const semester = getSemesterById(Number(existing.semester_id));
+export function updateSchedule(id: number, patch: SchedulePatchParsed, orgId = defaultOrgId()): Schedule {
+  const existing = requireScheduleRow(id, orgId);
+  const semester = getSemesterById(Number(existing.semester_id), orgId);
 
   const userId = patch.userId ?? Number(existing.user_id);
   const weekday = patch.weekday ?? Number(existing.weekday);
@@ -252,8 +252,8 @@ export function updateSchedule(id: number, patch: SchedulePatchParsed): Schedule
   const parity = patch.parity ?? existing.parity;
   const note = patch.note ?? existing.note;
 
-  if (patch.userId !== undefined) assertUserExists(userId);
-  if (patch.slotId !== undefined) assertSlotExists(slotId);
+  if (patch.userId !== undefined) assertUserExists(userId, orgId);
+  if (patch.slotId !== undefined) assertSlotExists(slotId, orgId);
   assertWeekRange(startWeek, endWeek);
 
   const conflictQuery: ConflictQuery = {
@@ -288,21 +288,23 @@ export function updateSchedule(id: number, patch: SchedulePatchParsed): Schedule
         parity,
       });
     });
-    return getScheduleOrThrow(id);
+    return getScheduleOrThrow(id, orgId);
   } catch (error) {
     return rethrowUniqueConflict(error, () => detectConflicts(conflictQuery));
   }
 }
 
-export function deleteSchedule(id: number): void {
-  requireScheduleRow(id);
+export function deleteSchedule(id: number, orgId = defaultOrgId()): void {
+  requireScheduleRow(id, orgId);
   run('DELETE FROM schedule WHERE id = ?', [id]);
 }
 
-export function checkConflicts(input: ConflictCheckParsed): ConflictDetail[] {
-  const semester = getActiveSemester();
-  assertUserExists(input.userId);
+export function checkConflicts(input: ConflictCheckParsed, orgId = defaultOrgId()): ConflictDetail[] {
+  const semester = getActiveSemester(orgId);
+  assertUserExists(input.userId, orgId);
   assertWeekRange(input.startWeek, input.endWeek);
+  for (const slotId of input.slotIds) assertSlotExists(slotId, orgId);
+  if (input.excludeScheduleId !== undefined) requireScheduleRow(input.excludeScheduleId, orgId);
   return detectConflicts({
     semester,
     userId: input.userId,
@@ -315,9 +317,9 @@ export function checkConflicts(input: ConflictCheckParsed): ConflictDetail[] {
   });
 }
 
-export function batchCreateSchedules(input: BatchScheduleParsed): BatchScheduleResult {
-  const semester = getActiveSemester();
-  assertUserExists(input.userId);
+export function batchCreateSchedules(input: BatchScheduleParsed, orgId = defaultOrgId()): BatchScheduleResult {
+  const semester = getActiveSemester(orgId);
+  assertUserExists(input.userId, orgId);
   const { start, end, parity } = input.weeks;
   assertWeekRange(start, end);
 
@@ -329,7 +331,7 @@ export function batchCreateSchedules(input: BatchScheduleParsed): BatchScheduleR
       const key = cell.weekday + ':' + slotId;
       if (seen.has(key)) continue;
       seen.add(key);
-      assertSlotExists(slotId);
+      assertSlotExists(slotId, orgId);
       pairs.push({ weekday: cell.weekday, slotId });
     }
   }
@@ -404,7 +406,7 @@ export function batchCreateSchedules(input: BatchScheduleParsed): BatchScheduleR
       }
       return createdIds;
     });
-    const schedules = ids.map((id) => getScheduleOrThrow(id));
+    const schedules = ids.map((id) => getScheduleOrThrow(id, orgId));
     return {
       created: schedules.length,
       skipped: pairs.length - creatable.length,

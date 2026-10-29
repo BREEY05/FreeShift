@@ -198,3 +198,35 @@ describe('POST /import/schedules', () => {
     expect(schedules[0].note).toBe('社团');
   });
 });
+
+describe('DELETE /data/reset', () => {
+  it('清空当前组织的安排与成员，并返回删除条数', async () => {
+    const slot = slotByLabel(fixture, '时段1');
+    addSchedule({ userId: user('小林').id, weekday: 1, slotId: slot.id, startWeek: 1, endWeek: 20 });
+    addSchedule({ userId: user('阿哲').id, weekday: 2, slotId: slot.id, startWeek: 1, endWeek: 20 });
+    expect(countSchedules()).toBe(2);
+    expect(countOccurrences()).toBeGreaterThan(0);
+
+    const response = await app.inject({ method: 'DELETE', url: '/api/v1/data/reset' });
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.body).data as { deletedSchedules: number; deletedUsers: number };
+    expect(data.deletedSchedules).toBe(2);
+    expect(data.deletedUsers).toBe(3);
+
+    expect(countSchedules()).toBe(0);
+    expect(countOccurrences()).toBe(0);
+    expect(all('SELECT * FROM app_user WHERE org_id = (SELECT id FROM organization ORDER BY id LIMIT 1)')).toHaveLength(0);
+    // 组织与成员关系保留
+    expect(all('SELECT * FROM organization').length).toBeGreaterThanOrEqual(1);
+    expect(all('SELECT * FROM org_member').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('空组织重复重置返回 0 且不影响组织本身', async () => {
+    await app.inject({ method: 'DELETE', url: '/api/v1/data/reset' });
+    const response = await app.inject({ method: 'DELETE', url: '/api/v1/data/reset' });
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body).data).toEqual({ deletedSchedules: 0, deletedUsers: 0 });
+    expect(all('SELECT * FROM organization').length).toBeGreaterThanOrEqual(1);
+    expect(all('SELECT * FROM org_member').length).toBeGreaterThanOrEqual(1);
+  });
+});

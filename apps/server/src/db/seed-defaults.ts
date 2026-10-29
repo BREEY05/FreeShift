@@ -46,6 +46,11 @@ const presets: PresetTemplate[] = [
   { name: PRESET_TEMPLATE_NAMES.SINGLE_PERIODS, description: '每天 8 节，每节 45 分钟', slots: singlePeriods },
   { name: PRESET_TEMPLATE_NAMES.HALF_DAY, description: '上午 / 下午 / 晚上三个大段', slots: halfDay },
   { name: PRESET_TEMPLATE_NAMES.EMPTY, description: '空白模板，按需添加自定义时间段', slots: [] },
+  { name: PRESET_TEMPLATE_NAMES.AUTUMN_COURSE, description: '秋季课表，每天四个两节连排时段', slots: [
+    { label: '第1-2节', start: '08:30', end: '10:10', dayPart: 'morning', durationMin: 100 },
+    { label: '第3-4节', start: '10:30', end: '12:10', dayPart: 'morning', durationMin: 100 },
+    ...twoPeriods.slice(2, 4),
+  ] },
 ];
 
 /** 本周周一（YYYY-MM-DD） */
@@ -55,17 +60,17 @@ export function mondayOf(dateIso: string): string {
   return addDays(dateIso, -offset);
 }
 
-function ensurePresetTemplates(db: DatabaseSync): void {
-  const findTemplate = db.prepare('SELECT id FROM slot_template WHERE name = ?');
-  const insertTemplate = db.prepare('INSERT INTO slot_template (name, description, is_preset) VALUES (?, ?, 1)');
+function ensurePresetTemplates(db: DatabaseSync, orgId: number): void {
+  const findTemplate = db.prepare('SELECT id FROM slot_template WHERE name = ? AND org_id = ?');
+  const insertTemplate = db.prepare('INSERT INTO slot_template (name, description, is_preset, org_id) VALUES (?, ?, 1, ?)');
   const insertSlot = db.prepare(
     'INSERT INTO time_slot (template_id, label, start_time, end_time, day_part, duration_min, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
   );
 
   for (const preset of presets) {
-    const existing = findTemplate.get(preset.name) as { id?: number } | undefined;
+    const existing = findTemplate.get(preset.name, orgId) as { id?: number } | undefined;
     if (existing && existing.id) continue;
-    const result = insertTemplate.run(preset.name, preset.description);
+    const result = insertTemplate.run(preset.name, preset.description, orgId);
     const templateId = Number(result.lastInsertRowid);
     preset.slots.forEach((slot, index) => {
       insertSlot.run(templateId, slot.label, slot.start, slot.end, slot.dayPart, slot.durationMin, index + 1);
@@ -73,13 +78,13 @@ function ensurePresetTemplates(db: DatabaseSync): void {
   }
 }
 
-function ensureDefaultSemester(db: DatabaseSync): void {
-  const count = db.prepare('SELECT COUNT(*) AS n FROM semester').get() as { n: number | bigint };
+function ensureDefaultSemester(db: DatabaseSync, orgId: number): void {
+  const count = db.prepare('SELECT COUNT(*) AS n FROM semester WHERE org_id = ?').get(orgId) as { n: number | bigint };
   if (Number(count.n) > 0) return;
 
   const template = db
-    .prepare('SELECT id FROM slot_template WHERE name = ?')
-    .get(PRESET_TEMPLATE_NAMES.TWO_PERIODS) as { id: number | bigint } | undefined;
+    .prepare('SELECT id FROM slot_template WHERE name = ? AND org_id = ?')
+    .get(PRESET_TEMPLATE_NAMES.TWO_PERIODS, orgId) as { id: number | bigint } | undefined;
   if (!template) return;
 
   const today = todayIso();
@@ -89,14 +94,14 @@ function ensureDefaultSemester(db: DatabaseSync): void {
   const name = year + ' ' + season;
 
   db.prepare(
-    'INSERT INTO semester (name, start_date, total_weeks, week1_parity, active_template_id, is_active) VALUES (?, ?, ?, ?, ?, 1)',
-  ).run(name, mondayOf(today), 20, 'odd', Number(template.id));
+    'INSERT INTO semester (name, start_date, total_weeks, week1_parity, active_template_id, is_active, org_id) VALUES (?, ?, ?, ?, ?, 1, ?)',
+  ).run(name, mondayOf(today), 20, 'odd', Number(template.id), orgId);
 }
 
 export function seedDefaults(db: DatabaseSync): void {
   db.prepare('INSERT OR IGNORE INTO algo_config (id, weights_json) VALUES (1, ?)').run(
     JSON.stringify(DEFAULT_RECOMMEND_CONFIG),
   );
-  ensurePresetTemplates(db);
-  ensureDefaultSemester(db);
+  const orgs = db.prepare('SELECT id FROM organization').all() as { id: number }[];
+  for (const org of orgs) { ensurePresetTemplates(db, org.id); ensureDefaultSemester(db, org.id); }
 }
