@@ -1,4 +1,4 @@
-# 生成本地离线版（Windows PowerShell）
+﻿# 生成本地离线版（Windows PowerShell）
 # 用法：在仓库根目录执行  ./scripts/package-local.ps1
 # 产出：dist-local/freeshift-local-<版本>.zip
 #       解压后把 Windows 便携版 Node 24 放到 node\ ，双击 start.bat 即可，无需联网、无需 npm install。
