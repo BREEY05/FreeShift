@@ -4,6 +4,7 @@ import { AppError } from '../lib/errors.ts';
 import { parseBody } from '../lib/validate.ts';
 import { selectedOrgId, isAdminRequest, requestEmail, requireOrg } from '../services/orgContext.ts';
 import {
+  addMember,
   canManage,
   createOrg,
   joinOrg,
@@ -29,6 +30,10 @@ const joinSchema = z
   })
   .refine((value) => value.orgId !== undefined || value.code !== undefined, { message: '请提供组织或邀请码' });
 const roleSchema = z.object({ role: z.enum(['owner', 'member']) });
+const addMemberSchema = z.object({
+  email: z.string().trim().email('请输入正确的邮箱').max(160),
+  name: z.string().trim().max(40).optional(),
+});
 const listQuerySchema = z.object({ q: z.string().max(120).optional() });
 
 function cookieFor(orgId: number): string {
@@ -101,6 +106,15 @@ export const orgRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get('/members', async (request) => ({ data: { members: members(requireOrg(request)) } }));
+  /** 组织负责人直接添加成员（免申请）：立即建档，个人表默认沿用组织模板。 */
+  app.post('/members', async (request, reply) => {
+    const id = requireOrg(request);
+    const email = requestEmail(request);
+    const input = parseBody(addMemberSchema, request.body);
+    addMember(id, email, input.email, input.name ?? null);
+    reply.status(201);
+    return { data: orgDetails(id, email) };
+  });
   app.delete('/members/:email', async (request, reply) => {
     removeMember(requireOrg(request), requestEmail(request), (request.params as { email: string }).email.toLowerCase());
     return reply.status(204).send();

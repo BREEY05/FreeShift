@@ -4,7 +4,7 @@ import type { AppUser } from '@freeshift/shared';
 import { all, get, run, transaction, type SqlValue } from '../db/index.ts';
 import { AppError, notFound } from '../lib/errors.ts';
 import { mapUser, type UserRow } from '../lib/mappers.ts';
-import { defaultOrgId, getUserById } from './context.ts';
+import { defaultOrgId, getUserById, USER_SELECT } from './context.ts';
 import { ensureUserForEmail, getUserRow, personalTemplateId, orgTemplateId, sameSlotType } from './tableService.ts';
 
 export const userInputSchema = z.object({
@@ -76,8 +76,8 @@ export function setOwnTemplate(orgId: number, email: string, templateId: number)
 
 export function listUsers(includeInactive = false, orgId = defaultOrgId()): AppUser[] {
   const rows = includeInactive
-    ? all<UserRow>('SELECT * FROM app_user WHERE org_id = ? ORDER BY sort_order ASC, id ASC', [orgId])
-    : all<UserRow>('SELECT * FROM app_user WHERE is_active = 1 AND org_id = ? ORDER BY sort_order ASC, id ASC', [orgId]);
+    ? all<UserRow>(USER_SELECT + ' WHERE u.org_id = ? ORDER BY u.sort_order ASC, u.id ASC', [orgId])
+    : all<UserRow>(USER_SELECT + ' WHERE u.is_active = 1 AND u.org_id = ? ORDER BY u.sort_order ASC, u.id ASC', [orgId]);
   return rows.map(mapUser);
 }
 

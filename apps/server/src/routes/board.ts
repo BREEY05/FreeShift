@@ -4,6 +4,7 @@ import { AppError, badRequest } from '../lib/errors.ts';
 import { toId, toInt } from '../lib/params.ts';
 import { isAdminRequest, requestEmail, requireOrg } from '../services/orgContext.ts';
 import { ensureUserForEmail } from '../services/tableService.ts';
+import { canManage } from '../services/orgService.ts';
 import {
   getAggregateBoard,
   getCellDetail,
@@ -63,8 +64,12 @@ function parseWeek(value: unknown): number | undefined {
   return toInt(value, undefined);
 }
 
-function requireAdmin(request: FastifyRequest): void {
-  if (!isAdminRequest(request)) throw new AppError(403, 'FORBIDDEN', '需要管理员权限');
+/** 组织表（成员空闲总览）只对平台管理员与组织负责人开放。 */
+function requireOrgManager(request: FastifyRequest, orgId: number): void {
+  if (isAdminRequest(request)) return;
+  if (!canManage(orgId, requestEmail(request))) {
+    throw new AppError(403, 'FORBIDDEN', '只有组织负责人可以查看组织表');
+  }
 }
 
 function requireSelfOrAdmin(request: FastifyRequest, userId: number, orgId: number): void {
@@ -75,9 +80,9 @@ function requireSelfOrAdmin(request: FastifyRequest, userId: number, orgId: numb
 
 export const boardRoutes: FastifyPluginAsync = async (app) => {
   app.get('/aggregate', async (request) => {
-    requireAdmin(request);
     const query = request.query as Record<string, unknown>;
     const orgId = requireOrg(request);
+    requireOrgManager(request, orgId);
     return {
       data: getAggregateBoard(
         {
@@ -92,13 +97,13 @@ export const boardRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get('/cell', async (request) => {
-    requireAdmin(request);
     const query = request.query as Record<string, unknown>;
     const weekday = toInt(query.weekday, undefined);
     if (weekday === undefined) throw badRequest('缺少参数：weekday');
     if (weekday < 1 || weekday > 7) throw badRequest('weekday 必须为 1-7 的整数');
     const slotId = toId(query.slot_id, 'slot_id');
     const orgId = requireOrg(request);
+    requireOrgManager(request, orgId);
     return {
       data: getCellDetail(
         {

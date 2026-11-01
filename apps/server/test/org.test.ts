@@ -68,6 +68,29 @@ describe('organization tenancy',()=>{
     // 其他非成员也无法切换到别人的组织
     expect((await call(owner,'POST','/org/switch',{orgId:orgA.id})).json().error.code).toBe('FORBIDDEN');
   });
+  it('lets the organization owner add members directly without an application',async()=>{
+    const a=await call(admin,'POST','/org',{name:'直加组织',presetName:'大学两节连排'});expect(a.statusCode).toBe(201);const orgId=a.json().data.org.id;
+    const direct='direct@example.com';sessions[direct]={token:token(direct)};
+    // 非本组织成员不能直接加人
+    expect((await call(owner,'POST','/org/members',{email:direct})).json().error.code).toBe('NO_ORG');
+    const added=await call(admin,'POST','/org/members',{email:direct,name:'直加成员'});
+    expect(added.statusCode).toBe(201);
+    expect(added.json().data.members.some((m:{email:string;status:string})=>m.email===direct&&m.status==='approved')).toBe(true);
+    // 被直接添加的邮箱立刻进入组织，并在组织内拥有个人表
+    expect((await call(direct,'GET','/org')).json().data.org.id).toBe(orgId);
+    const profile=await call(direct,'GET','/users/me');
+    expect(profile.statusCode).toBe(200);
+    expect(profile.json().data.user.name).toBe('直加成员');
+    expect(profile.json().data.slots.length).toBeGreaterThan(0);
+    const users=(await call(admin,'GET','/users')).json().data.users;
+    expect(users.some((u:{name:string;email:string|null})=>u.name==='直加成员'&&u.email===direct)).toBe(true);
+    // 组织表只对组织负责人开放
+    expect((await call(direct,'GET','/board/aggregate')).statusCode).toBe(403);
+    expect((await call(admin,'GET','/board/aggregate')).statusCode).toBe(200);
+    // 重复添加与非法邮箱
+    expect((await call(admin,'POST','/org/members',{email:direct})).json().error.code).toBe('ALREADY_MEMBER');
+    expect((await call(admin,'POST','/org/members',{email:'bad'})).statusCode).toBe(422);
+  });
   it('creates organizations, approves joins and isolates users templates schedules and semesters',async()=>{
     expect((await call(owner,'GET','/org')).json().error.code).toBe('NO_ORG');
     const a=await call(admin,'POST','/org',{name:'组织A',presetName:'大学两节连排'});expect(a.statusCode).toBe(201);const orgA=a.json().data.org;

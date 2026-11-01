@@ -4,7 +4,7 @@ import { all, get, run } from '../db/index.ts';
 import { AppError, notFound } from '../lib/errors.ts';
 import type { SlotRow, TemplateRow, UserRow } from '../lib/mappers.ts';
 import { mapSlot, mapUser } from '../lib/mappers.ts';
-import { getTemplateSlots } from './context.ts';
+import { getTemplateSlots, USER_SELECT } from './context.ts';
 
 /**
  * 个人表 / 组织时间类型 / 规范时间段（canonical slot）服务。
@@ -63,11 +63,7 @@ function nameFromEmail(email: string): string {
 }
 
 export function userRowByEmail(orgId: number, email: string): UserRow | undefined {
-  return get<UserRow>(
-    'SELECT u.*, t.name AS template_name FROM app_user u LEFT JOIN slot_template t ON t.id = u.template_id ' +
-      'WHERE u.org_id = ? AND lower(u.email) = lower(?)',
-    [orgId, email],
-  );
+  return get<UserRow>(USER_SELECT + ' WHERE u.org_id = ? AND lower(u.email) = lower(?)', [orgId, email]);
 }
 
 /** 会话邮箱在该组织还没有 app_user 时自动建立（个人表 = 组织模板）。 */
@@ -97,11 +93,7 @@ export function ensureUserForEmail(orgId: number, email: string): UserRow {
 }
 
 export function getUserRow(orgId: number, userId: number): UserRow | undefined {
-  return get<UserRow>(
-    'SELECT u.*, t.name AS template_name FROM app_user u LEFT JOIN slot_template t ON t.id = u.template_id ' +
-      'WHERE u.id = ? AND u.org_id = ?',
-    [userId, orgId],
-  );
+  return get<UserRow>(USER_SELECT + ' WHERE u.id = ? AND u.org_id = ?', [userId, orgId]);
 }
 
 /** 个人表模板：app_user.template_id ?? 组织模板 ?? 参考模板。 */

@@ -18,6 +18,7 @@ export async function fetchJoinRequests(): Promise<OrgMember[]> { const data=awa
 export async function approveJoinRequest(email:string):Promise<{requests:OrgMember[];members:OrgMember[]}>{return api.post('/org/requests/'+encodeURIComponent(email)+'/approve',{});}
 export async function rejectJoinRequest(email:string):Promise<OrgMember[]>{return (await api.post<{requests:OrgMember[]}>('/org/requests/'+encodeURIComponent(email)+'/reject',{})).requests;}
 export async function fetchOrgMembers():Promise<OrgMember[]>{return (await api.get<{members:OrgMember[]}>('/org/members')).members;}
+export async function addOrgMember(input:{email:string;name?:string}):Promise<OrgSnapshot>{return api.post('/org/members',input);}
 export async function removeOrgMember(email:string):Promise<void>{await api.delete('/org/members/'+encodeURIComponent(email));}
 export async function leaveOrg():Promise<void>{await api.post('/org/leave',{});}
 export interface ResetDataResult {deletedSchedules:number;deletedUsers:number;}

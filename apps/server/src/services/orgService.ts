@@ -209,6 +209,30 @@ export function reviewMember(orgId: number, actor: string, email: string, approv
   run('DELETE FROM org_member WHERE org_id=? AND email=?', [orgId, email]);
 }
 
+/**
+ * 组织负责人直接添加成员（免申请）：写入 approved 成员关系并立即建档。
+ * 建档时个人表默认取组织模板，所以新成员在「组织表」里马上就是可用状态。
+ */
+export function addMember(orgId: number, actor: string, email: string, name?: string | null): void {
+  if (!canManage(orgId, actor)) throw new AppError(403, 'FORBIDDEN', '仅组织负责人可操作');
+  const normalized = email.trim().toLowerCase();
+  if (normalized === '') throw new AppError(422, 'VALIDATION_ERROR', '请输入成员邮箱');
+  if (normalized === orgById(orgId).ownerEmail) throw new AppError(409, 'ALREADY_MEMBER', '该邮箱是组织创建者');
+  const existing = get<MemberRow>('SELECT * FROM org_member WHERE org_id = ? AND email = ?', [orgId, normalized]);
+  if (existing?.status === 'approved') throw new AppError(409, 'ALREADY_MEMBER', '该邮箱已是组织成员');
+  if (existing) {
+    run("UPDATE org_member SET status = 'approved' WHERE org_id = ? AND email = ?", [orgId, normalized]);
+  } else {
+    run("INSERT INTO org_member(org_id, email, role, status) VALUES(?, ?, 'member', 'approved')", [orgId, normalized]);
+  }
+  const member = ensureUserForEmail(orgId, normalized);
+  const displayName = (name ?? '').trim();
+  if (displayName === '' || displayName === member.name) return;
+  const taken = get('SELECT 1 AS x FROM app_user WHERE org_id = ? AND name = ? AND id <> ?', [orgId, displayName, member.id]);
+  if (taken) throw new AppError(409, 'USER_EXISTS', '该显示名已被占用，请换一个');
+  run('UPDATE app_user SET name = ? WHERE id = ? AND org_id = ?', [displayName.slice(0, 40), member.id, orgId]);
+}
+
 /** 管理员（组织负责人）移除成员；创建者不能被移除。 */
 export function removeMember(orgId: number, actor: string, email: string): void {
   if (!canManage(orgId, actor)) throw new AppError(403, 'FORBIDDEN', '仅组织负责人可操作');

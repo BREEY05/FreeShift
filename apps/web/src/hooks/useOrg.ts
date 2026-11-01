@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '../api/client';
 import {
+  addOrgMember,
   approveJoinRequest,
   createOrg,
   fetchOrg,
@@ -86,6 +87,18 @@ export function useOrgMutations() {
     onSuccess: () => void refresh(),
   });
 
+  /** 负责人直接添加成员：建档后立刻出现在组织表里 */
+  const addMemberMutation = useMutation({
+    mutationFn: (input: { email: string; name?: string }) => addOrgMember(input),
+    onSuccess: (snapshot) => {
+      queryClient.setQueryData(orgKeys.detail, snapshot);
+      void refresh();
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      void queryClient.invalidateQueries({ queryKey: ['board'] });
+      void queryClient.invalidateQueries({ queryKey: ['templates'] });
+    },
+  });
+
   const removeMutation = useMutation({
     mutationFn: (email: string) => removeOrgMember(email),
     onSuccess: () => {
@@ -107,6 +120,7 @@ export function useOrgMutations() {
     joinMutation,
     approveMutation,
     rejectMutation,
+    addMemberMutation,
     removeMutation,
     leaveMutation,
     invalidate: refresh,

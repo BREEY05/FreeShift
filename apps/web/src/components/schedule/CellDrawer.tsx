@@ -20,6 +20,8 @@ export interface CellDrawerProps {
   onClose: () => void;
   onPickUser: (user: AppUser) => void;
   onAddSchedule: () => void;
+  /** 组织表视图只看成员个人安排，隐藏「添加安排」入口（默认展示） */
+  hideAddSchedule?: boolean;
 }
 
 /** 右侧抽屉：格子详情 + 空闲/占用名单（数据来自聚合结果，不再发请求） */
@@ -34,6 +36,7 @@ export function CellDrawer({
   onClose,
   onPickUser,
   onAddSchedule,
+  hideAddSchedule = false,
 }: CellDrawerProps) {
   const dateIso = addDays(week.startDate, weekday - 1);
   const total = freeUsers.length + occupiedUsers.length;
@@ -53,14 +56,22 @@ export function CellDrawer({
         </span>
       }
       footer={
-        <div className="flex items-center justify-between gap-2">
-          <Button variant="ghost" onClick={onClose}>
-            关闭
-          </Button>
-          <Button variant="primary" iconLeft={<Plus className="h-4 w-4" aria-hidden />} onClick={onAddSchedule}>
-            添加安排
-          </Button>
-        </div>
+        hideAddSchedule ? (
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="ghost" onClick={onClose}>
+              关闭
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-2">
+            <Button variant="ghost" onClick={onClose}>
+              关闭
+            </Button>
+            <Button variant="primary" iconLeft={<Plus className="h-4 w-4" aria-hidden />} onClick={onAddSchedule}>
+              添加安排
+            </Button>
+          </div>
+        )
       }
     >
       <div className="space-y-5">

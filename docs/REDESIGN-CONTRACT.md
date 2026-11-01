@@ -1,4 +1,6 @@
-# 角色化重构契约（v3）
+# 角色化重构契约（v4）
+
+> v4（2026-11-01）：总览页增加「组织表 / 个人表」切换（组织创建者可用）、组织负责人可直接添加成员 `POST /org/members`、默认周次跟随真实日期。
 
 > 目标：把「组织 = 数据容器」改成「组织 = 平台管理员带时间类型模板、成员各自建表」的产品形态。
 > 本文件是后端/前端并行开发的**唯一接口契约**。改接口必须先改这里；实现中发现缺口也要回写这里。
@@ -7,7 +9,7 @@
 
 | 页面 | 路由 | 可见角色 | 内容 |
 | --- | --- | --- | --- |
-| 总览 | `/` | 所有人 | **只看自己的个人表**（周次 × 星期 × 时间段），点格子录入/编辑自己的安排；没有聚合视图、没有批选、没有同步成员。未加入组织/待审批时显示引导空态 |
+| 总览 | `/` | 所有人 | 右上角分段控件「组织表 / 个人表」：**组织创建者（平台管理员）默认进组织表**，普通成员只有个人表。组织表按组织模板自动汇总全部成员的空闲/占用，可同步成员、添加成员、点成员看其个人表；个人表是「周次 × 星期 × 时间段」，点格子录入/编辑自己的安排。默认周次＝真实日期所在周（学期外停在最近边界周并提示）。未加入组织/待审批时显示引导空态 |
 | 用户 | `/users` | 所有人 | 普通成员=自己的资料 + 我的表设置（选表/新建表入口）；管理员=本组织已加入成员列表（显示每人的表名），点成员可查看其个人表 |
 | 时间段 | `/slots` | 所有人 | 预设时间类型、组织模板、我的表；任何成员可新建属于自己的表（name+可选 cloneFrom）；管理员可编辑任何模板，普通成员只编辑自己的表 |
 | 推荐 | `/recommend` | 仅管理员 | 保持现状 |
@@ -59,6 +61,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_app_user_email ON app_user(org_id, email) W
 - 读个人表：取 `app_user.template_id` 的 slots 当作行列；把每条 schedule 的 slot 按
   `(start_time,end_time)` → `sort_order` 映射回个人 slot 后落格（映射不到就跳过该条）。
 - 聚合看板/推荐/统计/公平性继续用参考模板 slots + 已存储的 slot_id，语义不变。
+- 组织表权限：`GET /board/aggregate`、`GET /board/cell` 对**平台管理员或当前组织负责人**（`canManage`）开放，其他成员 403；
+  `GET /board/user/:id` 只允许本人或管理员。组织表无需额外配置：按参考模板自动汇总全部 `is_active=1` 成员。
 
 ## 3. 后端 API 契约
 
@@ -89,6 +93,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_app_user_email ON app_user(org_id, email) W
   - `tableName` = 该成员 `app_user.template_id` 的模板名（无 app_user 为 null）；`requests` 仅管理者可见（其他人 `[]`）。
 - 审批：`GET /org/requests`、`POST /org/requests/:email/approve|reject` 路径不变。
   - approve 时：`org_member.status='approved'` + 自动建 `app_user`（name=邮箱前缀，重名加 `_2`…；color 按 `DEFAULT_USER_COLORS` 轮转；email=该邮箱；template_id=组织模板）。可重复调用（已 approved 幂等）。
+- `POST /api/v1/org/members` body `{email, name?}` → 201 `{data:{org,members,requests}}`
+  - 仅组织负责人（`canManage`）或平台管理员，否则 403 `FORBIDDEN`；邮箱非法 422；邮箱是创建者/已是成员 409 `ALREADY_MEMBER`；显示名重名 409 `USER_EXISTS`。
+  - 效果：`org_member.status='approved'`（已有 pending 直接改 approved）+ 自动建 `app_user`（个人表=组织模板），立即出现在组织表与 `/users`。
 - 其余（switch/members/leave/patch role）路径与行为不变。
 
 ### 3.3 用户 / 个人表（backend-accounts）

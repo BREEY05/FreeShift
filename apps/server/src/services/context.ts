@@ -38,13 +38,17 @@ export function getSemesterSlots(semester: Semester): TimeSlot[] {
   return getTemplateSlots(semester.activeTemplateId);
 }
 
+/** 成员查询统一带上个人表模板名，供前端展示「我的表 / 成员表」。 */
+export const USER_SELECT =
+  'SELECT u.*, t.name AS template_name FROM app_user u LEFT JOIN slot_template t ON t.id = u.template_id';
+
 export function listActiveUsers(orgId = defaultOrgId()): AppUser[] {
-  const rows = all<UserRow>('SELECT * FROM app_user WHERE is_active = 1 AND org_id = ? ORDER BY sort_order ASC, id ASC', [orgId]);
+  const rows = all<UserRow>(USER_SELECT + ' WHERE u.is_active = 1 AND u.org_id = ? ORDER BY u.sort_order ASC, u.id ASC', [orgId]);
   return rows.map(mapUser);
 }
 
 export function getUserById(id: number, orgId = defaultOrgId()): AppUser {
-  const row = get<UserRow>('SELECT * FROM app_user WHERE id = ? AND org_id = ?', [id, orgId]);
+  const row = get<UserRow>(USER_SELECT + ' WHERE u.id = ? AND u.org_id = ?', [id, orgId]);
   if (!row) throw notFound('用户');
   return mapUser(row);
 }
