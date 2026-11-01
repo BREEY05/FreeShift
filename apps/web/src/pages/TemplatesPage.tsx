@@ -2,12 +2,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarClock, Layers, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { SlotTemplate } from '@freeshift/shared';
+import { useSession } from '../auth/session';
 import {
   activateTemplate,
   conflictScheduleCount,
   deleteTemplate,
   fetchTemplateDetail,
   fetchTemplates,
+  fetchMyProfile,
+  setMyTemplate,
   templateKeys,
 } from '../api/templates';
 import { SlotEditor } from '../components/pages/templates/SlotEditor';
@@ -26,7 +29,9 @@ type FormState = { mode: TemplateFormMode; source?: SlotTemplate };
 /** 时间段模板：左侧切换模板，右侧编辑时间段（预设只读，冲突 409 有明确指引） */
 export default function TemplatesPage() {
   const queryClient = useQueryClient();
-  const templatesQuery = useQuery({ queryKey: templateKeys.list(), queryFn: fetchTemplates, staleTime: 30_000 });
+  const { session, isAdmin } = useSession();
+  const profileQuery = useQuery({ queryKey: ['users','me'], queryFn: fetchMyProfile });
+  const templatesQuery = useQuery({ queryKey: templateKeys.list('all'), queryFn: () => fetchTemplates('all'), staleTime: 30_000 });
   const templates = templatesQuery.data ?? [];
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -67,6 +72,12 @@ export default function TemplatesPage() {
       queryClient.invalidateQueries({ queryKey: ['recommend'] }),
     ]);
   }
+
+  const setMineMutation = useMutation({
+    mutationFn: (id: number) => setMyTemplate(id),
+    onSuccess: async () => { await profileQuery.refetch(); await invalidateTemplateScoped(); setStatusMessage('已切换个人表'); },
+    onError: error => setActionError(getErrorMessage(error)),
+  });
 
   const activateMutation = useMutation({
     mutationFn: (input: { template: SlotTemplate; force: boolean }) => activateTemplate(input.template.id, input.force),
@@ -131,6 +142,14 @@ export default function TemplatesPage() {
 
   const busy = activateMutation.isPending || deleteMutation.isPending;
   const activeTemplate = templates.find((template) => template.isActive) ?? null;
+  const currentPersonalTemplateId = profileQuery.data?.user.templateId ?? templates.find(t => t.isOrgTemplate)?.id ?? null;
+  const canEdit = (template: SlotTemplate) => template.ownerEmail === session.email || (isAdmin && template.isOrgTemplate);
+  const groups = [
+    { key: 'presets', title: '预设时间类型', description: '内置预设只读，可作为创建个人表的基础。', templates: templates.filter(t => t.ownerEmail === null && !t.isOrgTemplate), emptyText: '没有预设模板。' },
+    { key: 'org', title: '组织时间类型', description: '组织成员共享的时间结构；仅管理员可维护。', templates: templates.filter(t => t.isOrgTemplate), emptyText: '组织尚未设置时间类型。' },
+    { key: 'mine', title: '我的表', description: '你创建的个人安排模板。', templates: templates.filter(t => t.ownerEmail === session.email), emptyText: '尚未创建个人表。', emptyActionLabel: '创建我的表' },
+    ...(isAdmin ? [{ key: 'members', title: '成员个人表', description: '查看组织成员创建的表。', templates: templates.filter(t => t.ownerEmail !== null && t.ownerEmail !== session.email), emptyText: '成员尚未创建个人表。' }] : []),
+  ];
 
   return (
     <div className="flex flex-col gap-4">
@@ -238,18 +257,19 @@ export default function TemplatesPage() {
       ) : (
         <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
           <TemplateList
-            templates={templates}
+            groups={groups}
             selectedId={selectedId}
-            busy={busy}
+            busy={busy || setMineMutation.isPending}
+            isAdmin={isAdmin}
+            canEdit={canEdit}
+            currentPersonalTemplateId={currentPersonalTemplateId}
             onSelect={handleSelect}
             onCreate={() => setFormState({ mode: 'create' })}
-            onUse={(template) => activateMutation.mutate({ template, force: false })}
+            onUse={(template) => template.isOrgTemplate ? activateMutation.mutate({ template, force: false }) : setMineMutation.mutate(template.id)}
+            onSetMine={(template) => setMineMutation.mutate(template.id)}
             onClone={(template) => setFormState({ mode: 'clone', source: template })}
             onRename={(template) => setFormState({ mode: 'rename', source: template })}
-            onDelete={(template) => {
-              setActionError(null);
-              setDeleteTarget(template);
-            }}
+            onDelete={(template) => { setActionError(null); setDeleteTarget(template); }}
           />
 
           {detailQuery.isPending ? (
@@ -277,6 +297,8 @@ export default function TemplatesPage() {
             <SlotEditor
               key={detailQuery.data.template.id}
               detail={detailQuery.data}
+              canEdit={canEdit(detailQuery.data.template)}
+              readOnlyHint={detailQuery.data.template.isOrgTemplate ? '组织模板仅管理员可编辑。' : detailQuery.data.template.ownerEmail === null ? '预设模板只读，可克隆后编辑。' : '仅创建者或管理员可编辑。'}
               onClone={() => setFormState({ mode: 'clone', source: detailQuery.data.template })}
               onSaved={(message) => {
                 setDirty(false);

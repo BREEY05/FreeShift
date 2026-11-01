@@ -6,6 +6,7 @@ import {
   fetchOrg,
   joinOrg,
   leaveOrg,
+  type OrgCreateInput,
   rejectJoinRequest,
   removeOrgMember,
   type OrgSnapshot,
@@ -57,7 +58,7 @@ export function useOrgMutations() {
   const refresh = () => queryClient.invalidateQueries({ queryKey: orgKeys.all });
 
   const createMutation = useMutation({
-    mutationFn: (name: string) => createOrg(name),
+    mutationFn: (input: OrgCreateInput) => createOrg(input),
     onSuccess: (snapshot) => {
       queryClient.setQueryData(orgKeys.detail, snapshot);
       void refresh();
@@ -68,7 +69,7 @@ export function useOrgMutations() {
   });
 
   const joinMutation = useMutation({
-    mutationFn: (code: string) => joinOrg(code),
+    mutationFn: (input: { orgId?: number; code?: string }) => joinOrg(input),
     onSuccess: () => void refresh(),
   });
 

@@ -5,6 +5,7 @@ import { all, get, run, transaction, type SqlValue } from '../db/index.ts';
 import { AppError, notFound } from '../lib/errors.ts';
 import { mapUser, type UserRow } from '../lib/mappers.ts';
 import { defaultOrgId, getUserById } from './context.ts';
+import { ensureUserForEmail, getUserRow, personalTemplateId, orgTemplateId, sameSlotType } from './tableService.ts';
 
 export const userInputSchema = z.object({
   name: z
@@ -52,6 +53,25 @@ function assertNameAvailable(name: string, excludeId: number | undefined, orgId:
   if (findUserRowByName(name, excludeId, orgId)) {
     throw new AppError(409, 'USER_EXISTS', '用户名已存在：' + name);
   }
+}
+
+export function getOwnUser(orgId: number, email: string): UserRow {
+  return ensureUserForEmail(orgId, email);
+}
+
+export function patchOwnUser(orgId: number, email: string, patch: {name?: string; color?: string; note?: string}): AppUser {
+  const own = ensureUserForEmail(orgId, email);
+  return updateUser(Number(own.id), patch, orgId);
+}
+
+export function setOwnTemplate(orgId: number, email: string, templateId: number): AppUser {
+  const own = ensureUserForEmail(orgId, email);
+  const target = get<{id:number}>('SELECT id FROM slot_template WHERE id=? AND org_id=?', [templateId, orgId]);
+  if (!target) throw notFound('模板');
+  const base = orgTemplateId(orgId);
+  if (base !== null && !sameSlotType(base, templateId)) throw new AppError(422, 'TEMPLATE_TYPE_MISMATCH', '模板与组织时间类型不一致');
+  run("UPDATE app_user SET template_id=?, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND org_id=?", [templateId, own.id, orgId]);
+  return getUserById(Number(own.id), orgId);
 }
 
 export function listUsers(includeInactive = false, orgId = defaultOrgId()): AppUser[] {

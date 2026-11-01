@@ -5,6 +5,7 @@ import { all, get, run, transaction } from '../db/index.ts';
 import { AppError, notFound } from '../lib/errors.ts';
 import { mapSlot, mapTemplate, type SemesterRow, type SlotRow, type TemplateRow } from '../lib/mappers.ts';
 import { defaultOrgId, getActiveSemester, getTemplateSlots } from './context.ts';
+import { assertTemplateWritable, isOfflineAuth, orgTemplateId, personalTemplateId, sameSlotType } from './tableService.ts';
 
 const timeSchema = z
   .string()
@@ -203,7 +204,33 @@ function validationError(message: string, path: string): AppError {
   return new AppError(422, 'VALIDATION_ERROR', message, [{ path, message }]);
 }
 
-export function listTemplates(orgId = defaultOrgId()): SlotTemplate[] {
+function currentPersonalTemplateId(orgId: number, email: string | null): number | null {
+  if (!email) return null;
+  let row = get<{ template_id: number | null }>(
+    'SELECT template_id FROM app_user WHERE org_id = ? AND lower(email) = lower(?) LIMIT 1',
+    [orgId, email],
+  );
+  // Offline fixtures predate app_user.email. Treat the first legacy user as the local owner
+  // so scope=mine and detail metadata remain useful without creating a duplicate user row.
+  if (!row && isOfflineAuth()) {
+    row = get<{ template_id: number | null }>('SELECT template_id FROM app_user WHERE org_id = ? ORDER BY id ASC LIMIT 1', [orgId]);
+  }
+  return row?.template_id === null || row?.template_id === undefined ? null : Number(row.template_id);
+}
+
+function mapTemplateContext(row: TemplateRow, orgId: number, email: string | null, personalId: number | null): SlotTemplate {
+  const base = orgTemplateId(orgId);
+  const template = mapTemplate(row);
+  const owner = row.owner_email?.toLowerCase() ?? null;
+  return {
+    ...template,
+    isMine: Boolean((email && owner === email.toLowerCase()) || personalId === Number(row.id)),
+    isOrgTemplate: owner === null && Number(row.is_preset) !== 1,
+    sameTypeAsOrg: base !== null && sameSlotType(base, Number(row.id)),
+  };
+}
+
+export function listTemplates(orgId = defaultOrgId(), email: string | null = null, _isAdmin = false): SlotTemplate[] {
   const rows = all<TemplateRow>(
     `SELECT t.*,
             (SELECT COUNT(*) FROM time_slot ts WHERE ts.template_id = t.id) AS slot_count,
@@ -212,24 +239,26 @@ export function listTemplates(orgId = defaultOrgId()): SlotTemplate[] {
       WHERE t.org_id = ?
       ORDER BY t.id ASC`, [orgId],
   );
-  return rows.map(mapTemplate);
+  const personalId = currentPersonalTemplateId(orgId, email);
+  return rows.map(row => mapTemplateContext(row, orgId, email, personalId));
 }
 
-export function getTemplateDetail(id: number, orgId = defaultOrgId()): TemplateDetail {
+export function getTemplateDetail(id: number, orgId = defaultOrgId(), email: string | null = null): TemplateDetail {
   const row = requireTemplateRow(id, orgId);
   const slots = getTemplateSlots(id);
   const active = activeSemesterRow(orgId);
+  const personalId = currentPersonalTemplateId(orgId, email);
   return {
-    template: mapTemplate({
+    template: mapTemplateContext({
       ...row,
       slot_count: slots.length,
       is_active: active && Number(active.active_template_id) === id ? 1 : 0,
-    }),
+    }, orgId, email, personalId),
     slots,
   };
 }
 
-export function createTemplate(input: TemplateInputParsed, orgId = defaultOrgId()): TemplateDetail {
+export function createTemplate(input: TemplateInputParsed, orgId = defaultOrgId(), ownerEmail: string | null = null): TemplateDetail {
   const name = input.name.trim();
   assertTemplateNameAvailable(name, undefined, orgId);
 
@@ -242,10 +271,11 @@ export function createTemplate(input: TemplateInputParsed, orgId = defaultOrgId(
   let templateId: number;
   try {
     templateId = transaction(() => {
-      const result = run('INSERT INTO slot_template (name, description, is_preset, org_id) VALUES (?, ?, 0, ?)', [
+      const result = run('INSERT INTO slot_template (name, description, is_preset, org_id, owner_email) VALUES (?, ?, 0, ?, ?)', [
         name,
         input.description ?? '',
         orgId,
+        ownerEmail,
       ]);
       const id = result.lastInsertRowid;
       sourceSlots.forEach((slot, index) => {
@@ -267,10 +297,10 @@ export function createTemplate(input: TemplateInputParsed, orgId = defaultOrgId(
     }
     throw error;
   }
-  return getTemplateDetail(templateId, orgId);
+  return getTemplateDetail(templateId, orgId, ownerEmail);
 }
 
-export function updateTemplate(id: number, patch: TemplatePatchParsed, orgId = defaultOrgId()): TemplateDetail {
+export function updateTemplate(id: number, patch: TemplatePatchParsed, orgId = defaultOrgId(), email: string | null = null): TemplateDetail {
   const row = requireTemplateRow(id, orgId);
   if (Number(row.is_preset) === 1) throw readonlyError();
   const sets: string[] = [];
@@ -298,7 +328,7 @@ export function updateTemplate(id: number, patch: TemplatePatchParsed, orgId = d
       throw error;
     }
   }
-  return getTemplateDetail(id, orgId);
+  return getTemplateDetail(id, orgId, email);
 }
 
 export function deleteTemplate(id: number, orgId = defaultOrgId()): void {
@@ -382,6 +412,16 @@ export function addSlot(templateId: number, input: SlotInputParsed, orgId = defa
 }
 
 type SlotRowWithPreset = SlotRow & { is_preset: number };
+
+/** Resolve the owning template for an individual slot before a mutation. */
+export function templateIdForSlot(id: number, orgId = defaultOrgId()): number {
+  const row = get<{ template_id: number }>(
+    'SELECT ts.template_id FROM time_slot ts JOIN slot_template t ON t.id = ts.template_id WHERE ts.id = ? AND t.org_id = ?',
+    [id, orgId],
+  );
+  if (!row) throw notFound('时间段');
+  return Number(row.template_id);
+}
 
 function requireSlotRow(id: number, orgId = defaultOrgId()): SlotRowWithPreset {
   const row = get<SlotRowWithPreset>(

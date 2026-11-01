@@ -63,6 +63,17 @@ describe('email authentication', () => {
     expect((await app.inject(ROOT + '/session/extra')).statusCode).toBe(401);
     expect((await app.inject('/healthz')).statusCode).toBe(200);
   });
+  it('lets an authorized email sign in directly without an OTP', async () => {
+    const response = await app.inject({ method: 'POST', url: ROOT + '/login', payload: { email: 'Person@Example.com' } });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ data: { enabled: true, email: 'person@example.com', role: 'member' } });
+    const cookie = String(response.headers['set-cookie']).split(';')[0];
+    expect(cookie).toMatch(/^freeshift_session=[A-Za-z0-9_-]{43}$/);
+    expect((await app.inject({ url: ROOT + '/session', headers: { cookie } })).json().data.email).toBe('person@example.com');
+    expect((await app.inject({ method: 'POST', url: ROOT + '/login', payload: { email: 'stranger@example.com' } })).statusCode).toBe(403);
+    expect(get('SELECT * FROM auth_otp')).toBeUndefined();
+  });
+
   it('normalizes identities, hashes credentials, creates sessions, consumes OTP, and revokes logout', async () => {
     expect((await send()).json()).toEqual({ data: { expiresIn: 600, retryAfter: 60 } });
     const otp = get<{ code_hash: string; salt: string }>('SELECT * FROM auth_otp')!;

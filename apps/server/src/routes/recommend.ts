@@ -1,8 +1,9 @@
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import type { AlternativesInput, ScoredInput } from '@freeshift/shared';
+import { AppError } from '../lib/errors.ts';
 import { z } from 'zod';
 import { parseBody } from '../lib/validate.ts';
-import { requireOrg } from '../services/orgContext.ts';
+import { isAdminRequest, requireOrg } from '../services/orgContext.ts';
 import {
   getAlternatives,
   getCommonFreeBlocks,
@@ -70,14 +71,23 @@ const configSchema = z.object({
   recentWindow: z.number().int().min(0).max(10).optional(),
 });
 
-export const recommendRoutes: FastifyPluginAsync = async (app) => {
-  app.get('/config', async () => ({ data: getRecommendConfig() }));
+function requireAdmin(request: FastifyRequest): void {
+  if (!isAdminRequest(request)) throw new AppError(403, 'FORBIDDEN', '需要管理员权限');
+}
 
-  app.put('/config', async (request) => ({
-    data: updateRecommendConfig(parseBody(configSchema, request.body)),
-  }));
+export const recommendRoutes: FastifyPluginAsync = async (app) => {
+  app.get('/config', async (request) => {
+    requireAdmin(request);
+    return { data: getRecommendConfig() };
+  });
+
+  app.put('/config', async (request) => {
+    requireAdmin(request);
+    return { data: updateRecommendConfig(parseBody(configSchema, request.body)) };
+  });
 
   app.post('/common-free', async (request) => {
+    requireAdmin(request);
     const input = parseBody(commonFreeSchema, request.body);
     const orgId = requireOrg(request);
     return {
@@ -86,12 +96,14 @@ export const recommendRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post('/scored', async (request) => {
+    requireAdmin(request);
     const input = parseBody(scoredSchema, request.body);
     const orgId = requireOrg(request);
     return { data: { cells: getScoredCells(input as unknown as ScoredInput, orgId) } };
   });
 
   app.post('/alternatives', async (request) => {
+    requireAdmin(request);
     const input = parseBody(alternativesSchema, request.body) as unknown as AlternativesInput;
     const orgId = requireOrg(request);
     return { data: getAlternatives(input, orgId) };

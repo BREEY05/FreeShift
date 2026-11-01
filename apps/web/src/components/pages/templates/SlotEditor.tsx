@@ -15,6 +15,10 @@ import { Input, Select } from '../../ui/Input';
 
 export interface SlotEditorProps {
   detail: TemplateDetail;
+  /** 是否有编辑权限（预设只读、个人表仅本人或管理员、组织共享仅管理员） */
+  canEdit: boolean;
+  /** 无编辑权限时的说明文案（按模板归属区分） */
+  readOnlyHint?: string;
   onClone: () => void;
   onSaved: (message: string) => void;
   onDirtyChange: (dirty: boolean) => void;
@@ -77,10 +81,10 @@ function deriveDuration(startTime: string, endTime: string): number | null {
   return diff >= 5 && diff <= 720 ? diff : null;
 }
 
-/** 右侧时间段编辑器：表格编辑 + 增删行 + 上下移动 + 全量保存（预设模板只读） */
-export function SlotEditor({ detail, onClone, onSaved, onDirtyChange }: SlotEditorProps) {
+/** 右侧时间段编辑器：表格编辑 + 增删行 + 上下移动 + 全量保存；无权限时只读展示 */
+export function SlotEditor({ detail, canEdit, readOnlyHint, onClone, onSaved, onDirtyChange }: SlotEditorProps) {
   const queryClient = useQueryClient();
-  const readOnly = detail.template.isPreset;
+  const readOnly = !canEdit;
   const [draft, setDraft] = useState<SlotDraft[]>(() => toDraft(detail.slots));
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -229,8 +233,14 @@ export function SlotEditor({ detail, onClone, onSaved, onDirtyChange }: SlotEdit
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
             <h2 className="truncate text-sm font-semibold text-ink">{detail.template.name}</h2>
-            {detail.template.isPreset ? <Badge tone="neutral">预设 · 只读</Badge> : null}
-            {detail.template.isActive ? <Badge tone="brand">当前启用</Badge> : null}
+            {detail.template.isPreset ? <Badge tone="neutral">预设</Badge> : null}
+            {detail.template.isOrgTemplate ? <Badge tone="brand">组织模板</Badge> : null}
+            {detail.template.isMine ? <Badge tone="mint">我的表</Badge> : null}
+            {!detail.template.isPreset && !detail.template.isOrgTemplate && !detail.template.isMine && detail.template.ownerEmail ? (
+              <Badge tone="neutral">{detail.template.ownerEmail} 的表</Badge>
+            ) : null}
+            {readOnly ? <Badge tone="outline">只读</Badge> : null}
+            {detail.template.isActive ? <Badge tone="brand">学期启用中</Badge> : null}
             {dirty ? <Badge tone="amber">有未保存修改</Badge> : null}
           </div>
           <p className="mt-0.5 text-2xs text-muted">
@@ -275,8 +285,9 @@ export function SlotEditor({ detail, onClone, onSaved, onDirtyChange }: SlotEdit
 
       {readOnly ? (
         <div className="px-4 py-2.5">
-          <Alert tone="info" title="预设模板不可修改">
-            预设模板用于快速开始。点击「克隆后可编辑」生成自定义模板，再自由增删时间段。
+          <Alert tone="info" title="这张表只读">
+            {readOnlyHint ??
+              '预设与组织模板由平台/管理员维护。点击「克隆后可编辑」复制一份到我的表，即可自由增删时间段。'}
           </Alert>
         </div>
       ) : null}
@@ -449,8 +460,9 @@ export function SlotEditor({ detail, onClone, onSaved, onDirtyChange }: SlotEdit
 
       <div className="border-t border-line bg-canvas px-4 py-2">
         <p className="text-2xs leading-5 text-subtle">
-          保存会以表格当前顺序全量替换该模板的时间段；模板一旦被安排引用（返回 409），时间段将不可再修改。
-          时长可手动填写，改动起止时间会自动推算。
+          {readOnly
+            ? '只读展示：时间段以模板当前保存的内容为准。'
+            : '保存会以表格当前顺序全量替换该模板的时间段；模板一旦被安排引用（返回 409），时间段将不可再修改。时长可手动填写，改动起止时间会自动推算。'}
         </p>
       </div>
     </Card>

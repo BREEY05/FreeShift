@@ -16,6 +16,7 @@ import { badRequest, notFound } from '../lib/errors.ts';
 import type { ScheduleRow } from '../lib/mappers.ts';
 import { mapSchedule } from '../lib/mappers.ts';
 import { defaultOrgId, getActiveSemester, getSemesterSlots, getUserById, listActiveUsers, resolveWeek } from './context.ts';
+import { matchPersonalSlot, personalSlots } from './tableService.ts';
 
 export type BoardFilter = 'all' | 'full_free' | 'partial';
 
@@ -170,35 +171,46 @@ export function getCellDetail(
   };
 }
 
+interface ScheduleWithSlotRow extends ScheduleRow {
+  start_time: string | null;
+  end_time: string | null;
+  sort_order: number;
+}
+
 /**
- * 个人视图：用 schedule 区间 + 单双周规则命中该周占用，
- * scheduleId 指向可编辑的原始 schedule。目标用户必须属于当前组织，否则 404。
+ * 个人视图：行列来自该成员自己的表（app_user.template_id，缺省组织模板），
+ * 调度里存的是参考模板的 slot_id，这里按起止时间/顺序映射回个人表的时间段。
+ * target 用户必须属于当前组织，否则 404。
  */
 export function getPersonalBoard(userId: number, weekNo?: number, orgId?: number): PersonalBoard {
   const org = resolveOrgId(orgId);
   const user = getUserById(userId, org);
   const semester = getActiveSemester(org);
   const week = resolveWeek(semester, weekNo);
-  const slots = getSemesterSlots(semester);
-  const templateId = semester.activeTemplateId ?? -1;
+  const slots = personalSlots(org, user.id);
 
-  const rows = all<ScheduleRow>(
-    `SELECT s.* FROM schedule s
+  const rows = all<ScheduleWithSlotRow>(
+    `SELECT s.*, ts.start_time, ts.end_time, ts.sort_order FROM schedule s
        JOIN time_slot ts ON ts.id = s.slot_id
       WHERE s.semester_id = ?
         AND s.user_id = ?
-        AND ts.template_id = ?
         AND s.start_week <= ?
         AND s.end_week >= ?
       ORDER BY s.weekday ASC, ts.sort_order ASC, s.id ASC`,
-    [semester.id, user.id, templateId, week.weekNo, week.weekNo],
+    [semester.id, user.id, week.weekNo, week.weekNo],
   );
 
   const hitByCell = new Map<string, Schedule>();
   for (const row of rows) {
     const schedule = mapSchedule(row);
     if (!isWeekIncluded(schedule.parity, week.parity)) continue;
-    const key = cellKey(schedule.weekday, schedule.slotId);
+    const slot = matchPersonalSlot(slots, {
+      startTime: row.start_time,
+      endTime: row.end_time,
+      sortOrder: Number(row.sort_order),
+    });
+    if (!slot) continue;
+    const key = cellKey(schedule.weekday, slot.id);
     if (!hitByCell.has(key)) hitByCell.set(key, schedule);
   }
 
@@ -234,17 +246,15 @@ export function listUserSchedules(
     throw badRequest('周次范围不合法：' + from + ' ~ ' + to);
   }
   getUserById(userId, org);
-  const templateId = semester.activeTemplateId ?? -1;
-  const rows = all<ScheduleRow>(
-    `SELECT s.* FROM schedule s
+  const rows = all<ScheduleWithSlotRow>(
+    `SELECT s.*, ts.start_time, ts.end_time, ts.sort_order FROM schedule s
        JOIN time_slot ts ON ts.id = s.slot_id
       WHERE s.semester_id = ?
         AND s.user_id = ?
-        AND ts.template_id = ?
         AND s.start_week <= ?
         AND s.end_week >= ?
       ORDER BY s.weekday ASC, ts.sort_order ASC, s.id ASC`,
-    [semester.id, userId, templateId, to, from],
+    [semester.id, userId, to, from],
   );
   return rows.map(mapSchedule);
 }

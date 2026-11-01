@@ -37,6 +37,14 @@ export interface SlotTemplate {
   slotCount: number;
   isActive: boolean;
   createdAt: string;
+  /** 个人表的拥有者邮箱；NULL = 组织共享 / 内置预设 */
+  ownerEmail: string | null;
+  /** 是否是当前登录用户自己的表 */
+  isMine: boolean;
+  /** 是否是当前组织的组织模板 */
+  isOrgTemplate: boolean;
+  /** 是否与组织模板属于同一时间类型（成员可选作个人表） */
+  sameTypeAsOrg: boolean;
 }
 
 export interface TimeSlot {
@@ -59,6 +67,11 @@ export interface AppUser {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+  /** 登录邮箱；历史遗留用户可能为 null */
+  email: string | null;
+  /** 该成员的当前个人表模板 id */
+  templateId: number | null;
+  templateName: string | null;
 }
 
 export interface Schedule {
@@ -85,6 +98,77 @@ export interface ConflictDetail {
   endWeek: number;
   parity: Parity;
   note: string;
+}
+
+export interface OrgInfo {
+  id: number;
+  name: string;
+  code: string;
+  ownerEmail: string;
+  createdAt: string;
+  templateId: number | null;
+  templateName: string | null;
+}
+
+export type OrgRole = 'owner' | 'member';
+export type OrgMemberStatus = 'pending' | 'approved';
+
+export interface OrgMember {
+  orgId: number;
+  email: string;
+  role: OrgRole;
+  status: OrgMemberStatus;
+  createdAt: string;
+  /** 该成员当前个人表模板名（未建表为 null） */
+  tableName: string | null;
+}
+
+export interface OrgSnapshot {
+  org: OrgInfo;
+  members: OrgMember[];
+  requests: OrgMember[];
+}
+
+export interface OrgMineItem {
+  org: OrgInfo;
+  role: OrgRole;
+}
+
+export interface OrgSearchItem extends OrgInfo {
+  memberCount: number;
+  /** 当前登录用户与该组织的关系 */
+  myStatus: OrgRole | 'approved' | 'pending' | null;
+}
+
+export interface OrgPreset {
+  name: string;
+  description: string;
+  slotCount: number;
+}
+
+export interface OrgCreateInput {
+  name: string;
+  presetName: string;
+}
+
+export interface OrgJoinInput {
+  orgId?: number;
+  code?: string;
+}
+
+export interface OrgJoinResult {
+  org: OrgInfo;
+  status: OrgMemberStatus;
+}
+
+/** GET /users/me：本人资料 + 个人表时间段 */
+export interface MyProfile {
+  user: AppUser;
+  slots: TimeSlot[];
+}
+
+export interface LoginInput {
+  email: string;
 }
 
 export interface BoardCell {

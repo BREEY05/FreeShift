@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import type { OrgPreset } from '../../../api/org';
 import { Alert } from '../../ui/Alert';
 import { Button } from '../../ui/Button';
 import { Field, Input } from '../../ui/Input';
@@ -6,11 +7,14 @@ import { Field, Input } from '../../ui/Input';
 export interface CreateOrgFormProps {
   submitting: boolean;
   error: string | null;
+  presets: OrgPreset[];
+  selectedPreset: string;
+  onPresetChange: (name: string) => void;
   onSubmit: (name: string) => void;
 }
 
-/** 创建组织：只需组织名称，创建者自动成为负责人 */
-export function CreateOrgForm({ submitting, error, onSubmit }: CreateOrgFormProps) {
+/** 创建组织：名称与组织时间类型，创建者自动成为负责人 */
+export function CreateOrgForm({ submitting, error, presets, selectedPreset, onPresetChange, onSubmit }: CreateOrgFormProps) {
   const [name, setName] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
   const shownError = localError ?? error;
@@ -18,6 +22,7 @@ export function CreateOrgForm({ submitting, error, onSubmit }: CreateOrgFormProp
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const value = name.trim();
+    if (!selectedPreset) { setLocalError('请选择组织时间类型'); return; }
     if (value.length === 0) {
       setLocalError('请填写组织名称');
       return;
@@ -46,8 +51,13 @@ export function CreateOrgForm({ submitting, error, onSubmit }: CreateOrgFormProp
           }}
         />
       </Field>
+      <Field label="组织时间类型" htmlFor="org-create-preset" required error={shownError}>
+        <select id="org-create-preset" value={selectedPreset} onChange={e=>onPresetChange(e.target.value)} className="w-full rounded-control border border-line bg-canvas px-3 py-2 text-xs text-ink">
+          <option value="">请选择预设模板</option>{presets.map(p=><option key={p.name} value={p.name}>{p.name}（{p.slotCount} 个时段）</option>)}
+        </select>
+      </Field>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-2xs leading-5 text-subtle">创建后你会成为负责人，系统会自动生成组织 ID 与初始时间段模板。</p>
+        <p className="text-2xs leading-5 text-subtle">创建者成为负责人，并设置组织时间类型。</p>
         <Button type="submit" variant="primary" loading={submitting} disabled={submitting}>
           创建组织
         </Button>

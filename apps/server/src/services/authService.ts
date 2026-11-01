@@ -231,6 +231,26 @@ export function verifyCode(email: string, code: unknown, now: number): VerifyRes
   return result;
 }
 
+export interface LoginResult { token: string; email: string; role: AuthRole }
+
+/**
+ * 授权邮箱直连登录：只校验白名单，不需要验证码（契约 3.1）。
+ * 授权本身就是「已注册 + 已验证」，所以直接签发会话。
+ */
+export function loginByEmail(emailValue: unknown, now: number): LoginResult {
+  const email = normalizeEmail(emailValue);
+  const account = assertAllowlisted(email);
+  const token = transaction(() => {
+    const value = randomBytes(32).toString('base64url');
+    run('UPDATE auth_account SET last_login_at = ? WHERE email = ?', [now, email]);
+    run('DELETE FROM auth_session WHERE expires_at <= ?', [now]);
+    run('INSERT INTO auth_session(token_hash, email, expires_at) VALUES (?, ?, ?)',
+      [hash(value), email, now + SESSION_SECONDS * 1000]);
+    return value;
+  });
+  return { token, email, role: account.role };
+}
+
 export interface SessionAccount { email: string; role: AuthRole }
 
 /** 有效会话对应的账户（含角色）；会话存在但账户已删除时视为未登录。 */

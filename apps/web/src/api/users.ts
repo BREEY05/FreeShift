@@ -1,10 +1,11 @@
-import type { AppUser, UserInput } from '@freeshift/shared';
+import type { AppUser, MyProfile, UserInput } from '@freeshift/shared';
 import { api } from './client';
 
 /** 用户相关查询键：['users'] 为前缀，便于统一失效 */
 export const userKeys = {
   all: ['users'] as const,
   list: (includeInactive: boolean) => ['users', includeInactive ? 'all' : 'active'] as const,
+  me: ['users', 'me'] as const,
 };
 
 export async function fetchUsers(includeInactive = false): Promise<AppUser[]> {
@@ -35,4 +36,27 @@ export async function deleteUserPermanently(id: number): Promise<void> {
 export async function reorderUsers(ids: number[]): Promise<AppUser[]> {
   const data = await api.put<{ users: AppUser[] }>('/users/order', { ids });
   return data.users;
+}
+
+/** GET /users/me：本人资料 + 个人表时间段（契约 3.3，会在首次访问时自动建档） */
+export function fetchMyProfile(): Promise<MyProfile> {
+  return api.get<MyProfile>('/users/me');
+}
+
+export interface MyProfilePatch {
+  name?: string;
+  color?: string;
+  note?: string;
+}
+
+/** PATCH /users/me：修改自己的姓名 / 颜色 / 备注 */
+export async function updateMyProfile(patch: MyProfilePatch): Promise<AppUser> {
+  const data = await api.patch<{ user: AppUser }>('/users/me', patch);
+  return data.user;
+}
+
+/** PUT /users/me/template：把自己的个人表切换为某个同类型模板 */
+export async function setMyTemplate(templateId: number): Promise<AppUser> {
+  const data = await api.put<{ user: AppUser }>('/users/me/template', { templateId });
+  return data.user;
 }

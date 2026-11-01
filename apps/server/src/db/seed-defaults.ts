@@ -53,6 +53,11 @@ const presets: PresetTemplate[] = [
   ] },
 ];
 
+/** 内置时间类型清单（组织创建时可选）。 */
+export function presetTemplates(): { name: string; description: string; slotCount: number }[] {
+  return presets.map((preset) => ({ name: preset.name, description: preset.description, slotCount: preset.slots.length }));
+}
+
 /** 本周周一（YYYY-MM-DD） */
 export function mondayOf(dateIso: string): string {
   const date = new Date(dateIso + 'T00:00:00Z');
@@ -98,10 +103,24 @@ function ensureDefaultSemester(db: DatabaseSync, orgId: number): void {
   ).run(name, mondayOf(today), 20, 'odd', Number(template.id), orgId);
 }
 
+/** 组织未指定模板时，用当前学期启用模板（退回两节连排预设）。 */
+function ensureOrgTemplate(db: DatabaseSync, orgId: number): void {
+  const row = db.prepare('SELECT template_id FROM organization WHERE id = ?').get(orgId) as { template_id: number | bigint | null } | undefined;
+  if (!row || row.template_id !== null) return;
+  const active = db
+    .prepare('SELECT active_template_id AS id FROM semester WHERE org_id = ? AND is_active = 1')
+    .get(orgId) as { id: number | bigint | null } | undefined;
+  const fallback = db
+    .prepare('SELECT id FROM slot_template WHERE name = ? AND org_id = ?')
+    .get(PRESET_TEMPLATE_NAMES.TWO_PERIODS, orgId) as { id: number | bigint } | undefined;
+  const templateId = active?.id ?? fallback?.id ?? null;
+  if (templateId !== null) db.prepare('UPDATE organization SET template_id = ? WHERE id = ?').run(Number(templateId), orgId);
+}
+
 export function seedDefaults(db: DatabaseSync): void {
   db.prepare('INSERT OR IGNORE INTO algo_config (id, weights_json) VALUES (1, ?)').run(
     JSON.stringify(DEFAULT_RECOMMEND_CONFIG),
   );
   const orgs = db.prepare('SELECT id FROM organization').all() as { id: number }[];
-  for (const org of orgs) { ensurePresetTemplates(db, org.id); ensureDefaultSemester(db, org.id); }
+  for (const org of orgs) { ensurePresetTemplates(db, org.id); ensureDefaultSemester(db, org.id); ensureOrgTemplate(db, org.id); }
 }

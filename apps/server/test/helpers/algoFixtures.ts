@@ -84,6 +84,8 @@ export function setupAlgoFixture(userNames: string[] = []): AlgoFixture {
   db.exec('DELETE FROM app_user WHERE org_id = ' + Number(orgId));
 
   const templateId = ensureTestTemplate(orgId);
+  // 个人表默认沿用组织确定的时间类型；测试模板同时作为组织参考模板。
+  run('UPDATE organization SET template_id = ? WHERE id = ?', [templateId, orgId]);
   const semester = getActiveSemester(orgId);
   run(
     `UPDATE semester

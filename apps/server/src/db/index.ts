@@ -61,6 +61,19 @@ export function migrate(db: DatabaseSyncInstance): void {
     for (const table of ['semester', 'slot_template', 'app_user']) {
       if (!columnsOf(table).has('org_id')) db.exec('ALTER TABLE ' + table + ' ADD COLUMN org_id INTEGER NOT NULL DEFAULT ' + org.id + ' REFERENCES organization(id) ON DELETE CASCADE');
     }
+    // Personal-table model columns (all idempotent).
+    if (!columnsOf('organization').has('template_id')) {
+      db.exec('ALTER TABLE organization ADD COLUMN template_id INTEGER REFERENCES slot_template(id) ON DELETE SET NULL');
+    }
+    if (!columnsOf('slot_template').has('owner_email')) {
+      db.exec('ALTER TABLE slot_template ADD COLUMN owner_email TEXT');
+    }
+    if (!columnsOf('app_user').has('email')) {
+      db.exec('ALTER TABLE app_user ADD COLUMN email TEXT');
+    }
+    if (!columnsOf('app_user').has('template_id')) {
+      db.exec('ALTER TABLE app_user ADD COLUMN template_id INTEGER REFERENCES slot_template(id) ON DELETE SET NULL');
+    }
     // Rebuild both formerly globally unique name tables, preserving IDs and FK targets.
     for (const table of ['app_user', 'slot_template']) {
       const definition = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").get(table) as { sql: string }).sql;
@@ -73,7 +86,9 @@ export function migrate(db: DatabaseSyncInstance): void {
         db.exec('ALTER TABLE ' + table + '_new RENAME TO ' + table);
       }
     }
-    db.exec('DROP INDEX IF EXISTS ux_semester_active; CREATE UNIQUE INDEX ux_semester_active ON semester(org_id) WHERE is_active = 1; CREATE INDEX IF NOT EXISTS ix_app_user_active ON app_user(org_id,is_active,sort_order)');
+    db.exec('DROP INDEX IF EXISTS ux_semester_active; CREATE UNIQUE INDEX ux_semester_active ON semester(org_id) WHERE is_active = 1; ' +
+      'CREATE INDEX IF NOT EXISTS ix_app_user_active ON app_user(org_id,is_active,sort_order); ' +
+      'CREATE UNIQUE INDEX IF NOT EXISTS ux_app_user_email ON app_user(org_id, email) WHERE email IS NOT NULL');
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
   finally { db.exec('PRAGMA foreign_keys = ON'); }

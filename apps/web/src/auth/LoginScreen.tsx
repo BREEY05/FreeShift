@@ -7,92 +7,52 @@ function isNotAuthorized(err: unknown): boolean {
   return err instanceof AuthRequestError && (err.code === 'NOT_AUTHORIZED' || err.status === 403);
 }
 
+/** 登录页：授权名单内的邮箱直接输入即可进入（契约 v3，无验证码步骤） */
 export function LoginScreen({ onAuthenticated, notice }: { onAuthenticated: (session: AuthSession) => void; notice: string }) {
   const [email, setEmail] = useState('');
-  const [sentEmail, setSentEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [busy, setBusy] = useState<'send' | 'verify' | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [deniedEmail, setDeniedEmail] = useState('');
-  const [deadline, setDeadline] = useState(0);
-  const [remaining, setRemaining] = useState(0);
-  const [expiresIn, setExpiresIn] = useState(600);
-  const codeInput = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const mounted = useRef(true);
   const pending = useRef(false);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  useEffect(() => {
-    const update = () => setRemaining(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
-    update();
-    if (!deadline) return;
-    const timer = window.setInterval(update, 1000);
-    return () => window.clearInterval(timer);
-  }, [deadline]);
-  useEffect(() => { if (sentEmail && !busy) codeInput.current?.focus(); }, [sentEmail, busy]);
 
-  async function sendCode() {
-    if (pending.current || remaining > 0) return;
-    pending.current = true;
-    setBusy('send');
-    setError('');
-    setDeniedEmail('');
-    try {
-      const address = (sentEmail || email).trim();
-      const result = await authApi.sendCode(address);
-      if (!mounted.current) return;
-      setSentEmail(address);
-      setCode('');
-      setExpiresIn(result.expiresIn);
-      setDeadline(Date.now() + result.retryAfter * 1000);
-      codeInput.current?.focus();
-    } catch (err) {
-      if (!mounted.current) return;
-      if (isNotAuthorized(err)) {
-        // 未获授权的邮箱不进入验证码流程，直接展示可操作的说明
-        setSentEmail('');
-        setCode('');
-        setDeniedEmail((sentEmail || email).trim());
-        return;
-      }
-      setError(err instanceof Error ? err.message : '验证码发送失败，请重试。');
-      if (err instanceof AuthRequestError && err.retryAfter > 0) setDeadline(Date.now() + err.retryAfter * 1000);
-    } finally {
-      pending.current = false;
-      if (mounted.current) setBusy(null);
-    }
-  }
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => { if (!busy) inputRef.current?.focus(); }, [busy]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!sentEmail) { await sendCode(); return; }
+    const address = email.trim();
+    if (!address) {
+      setError('请输入邮箱地址');
+      inputRef.current?.focus();
+      return;
+    }
     if (pending.current) return;
     pending.current = true;
-    setBusy('verify');
+    setBusy(true);
     setError('');
+    setDeniedEmail('');
     try {
-      const session = await authApi.verify(sentEmail, code);
-      if (mounted.current) {
-        if (!session.enabled || !session.email) throw new Error('验证未完成，请重新获取验证码。');
-        onAuthenticated(session);
-      }
+      const session = await authApi.login(address);
+      if (!mounted.current) return;
+      if (!session.enabled || !session.email) throw new Error('登录未完成，请重试。');
+      onAuthenticated(session);
     } catch (err) {
       if (!mounted.current) return;
       if (isNotAuthorized(err)) {
-        setSentEmail('');
-        setCode('');
-        setDeniedEmail(sentEmail);
+        setDeniedEmail(address);
+        setError('');
         return;
       }
-      setError(err instanceof Error ? err.message : '验证失败，请重试。');
+      setError(err instanceof Error ? err.message : '登录失败，请重试。');
     } finally {
       pending.current = false;
-      if (mounted.current) setBusy(null);
+      if (mounted.current) setBusy(false);
     }
   }
 
   const denied = deniedEmail !== '';
-  const cooling = !sentEmail && remaining > 0;
-  const primaryLabel = sentEmail ? '验证并进入' : denied ? '已记为未授权，请联系管理员' : remaining > 0 ? remaining + ' 秒后可重新发送' : '获取邮箱验证码';
 
   return (
     <main className="fs-auth-page">
@@ -113,25 +73,21 @@ export function LoginScreen({ onAuthenticated, notice }: { onAuthenticated: (ses
         </section>
         <section className="fs-auth-card" aria-labelledby="fs-auth-title">
           <span className="fs-auth-step">YOUR TIME, CONNECTED</span>
-          <h2 id="fs-auth-title">{denied ? '尚未获得访问授权' : sentEmail ? '查看你的邮箱' : '欢迎来到 FreeShift'}</h2>
-          <p className="fs-auth-intro">{denied ? '该邮箱还没有被加入团队访问名单，暂时无法登录。' : sentEmail ? '输入邮件中的 6 位验证码，继续你的排班。' : '使用已授权的邮箱登录，开始安排更从容的一周。'}</p>
+          <h2 id="fs-auth-title">{denied ? '尚未获得访问授权' : '欢迎来到 FreeShift'}</h2>
+          <p className="fs-auth-intro">{denied ? '该邮箱还没有被加入团队访问名单，暂时无法登录。' : '使用已授权的邮箱即可进入，无需密码与验证码。'}</p>
           {notice && !denied && <p className="fs-auth-notice" role="status">{notice}</p>}
           {denied && <div className="fs-auth-denied" role="alert">
             <div className="fs-auth-denied-head"><ShieldX size={18} aria-hidden /><strong>尚未获得访问授权</strong></div>
             <p><code>{deniedEmail}</code> 尚未获得访问授权，请联系管理员将该邮箱加入名单后再试。</p>
-            <p className="fs-auth-denied-hint">授权后无需注册，输入邮箱获取验证码即可直接登录。</p>
+            <p className="fs-auth-denied-hint">授权后无需注册，输入邮箱即可直接进入。</p>
           </div>}
           <form onSubmit={submit}>
             <label htmlFor="fs-auth-email">邮箱地址</label>
-            <div className="fs-auth-input-wrap"><Mail size={18} aria-hidden /><input id="fs-auth-email" type="email" autoComplete="email" placeholder="输入你的邮箱地址" maxLength={254} required value={sentEmail || email} disabled={!!sentEmail || !!busy} onChange={event => { setEmail(event.target.value); setError(''); setDeniedEmail(''); }} /></div>
-            {sentEmail && <>
-              <div className="fs-auth-code-label"><label htmlFor="fs-auth-code">邮箱验证码</label><button type="button" disabled={!!busy} onClick={() => { setSentEmail(''); setCode(''); setError(''); }}>更换邮箱</button></div>
-              <input ref={codeInput} className="fs-auth-code" id="fs-auth-code" type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" minLength={6} maxLength={6} required placeholder="6 位数字" value={code} disabled={!!busy} onChange={event => { setCode(event.target.value.replace(/[^0-9]/g, '')); setError(''); }} aria-describedby="fs-auth-code-help" />
-              <p id="fs-auth-code-help" className="fs-auth-help">验证码已发送，有效期 {Math.ceil(expiresIn / 60)} 分钟。未收到时，请检查垃圾邮件。</p>
-            </>}
+            <div className="fs-auth-input-wrap"><Mail size={18} aria-hidden /><input ref={inputRef} id="fs-auth-email" type="email" autoComplete="email" placeholder="输入你的邮箱地址" maxLength={254} required value={email} disabled={busy} onChange={event => { setEmail(event.target.value); setError(''); setDeniedEmail(''); }} /></div>
             {error && <p className="fs-auth-error" role="alert">{error}</p>}
-            <button className="fs-auth-primary" type="submit" disabled={!!busy || cooling}>{busy ? <Loader2 size={18} className="animate-spin motion-reduce:animate-none" aria-hidden /> : <>{sentEmail ? '验证并进入' : primaryLabel}<ArrowRight size={17} aria-hidden /></>}</button>
-            {sentEmail && <button className="fs-auth-resend" type="button" disabled={!!busy || remaining > 0} onClick={() => void sendCode()}>{remaining > 0 ? remaining + ' 秒后可重新发送' : '重新发送验证码'}</button>}
+            <button className="fs-auth-primary" type="submit" disabled={busy}>
+              {busy ? <Loader2 size={18} className="animate-spin motion-reduce:animate-none" aria-hidden /> : <>进入 FreeShift<ArrowRight size={17} aria-hidden /></>}
+            </button>
           </form>
           <div className="fs-auth-assurance"><ShieldCheck size={17} aria-hidden /><span>无需密码，在此设备保持登录 30 天</span></div>
           <p className="fs-auth-registration">仅限已获授权的团队成员登录。<br />如需加入，请联系团队管理员添加邮箱。</p>

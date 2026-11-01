@@ -86,18 +86,25 @@ export function ScheduleFormDialog({
   });
 
   const detail = detailQuery.data;
+  /** 契约 5.2：个人表视图下 detail.slotId 可能属于组织参考模板，不在 props.slots 中时保留 defaultSlotId */
+  const detailSlotInList = detail ? slots.some((slot) => slot.id === detail.slotId) : true;
+  const fallbackSlotId =
+    defaultSlotId !== undefined && slots.some((slot) => slot.id === defaultSlotId)
+      ? defaultSlotId
+      : slots[0]?.id;
   useEffect(() => {
     if (!detail) return;
+    const slotId = slots.some((slot) => slot.id === detail.slotId) ? detail.slotId : fallbackSlotId ?? detail.slotId;
     setForm({
       userId: String(detail.userId),
       weekday: String(detail.weekday),
-      slotId: String(detail.slotId),
+      slotId: String(slotId),
       startWeek: String(detail.startWeek),
       endWeek: String(detail.endWeek),
       parity: detail.parity,
       note: detail.note,
     });
-  }, [detail]);
+  }, [detail, slots, fallbackSlotId]);
 
   const coveredWeeks = useMemo(() => {
     const start = Number(form.startWeek);
@@ -296,7 +303,13 @@ export function ScheduleFormDialog({
               </Select>
             </Field>
 
-            <Field label="时间段" required htmlFor={formId + '-slot'} error={fieldErrors.slotId}>
+            <Field
+              label="时间段"
+              required
+              htmlFor={formId + '-slot'}
+              error={fieldErrors.slotId}
+              hint={isEdit && detail && !detailSlotInList ? '原安排的时间段已映射到当前个人表，保存时提交所选时间段。' : undefined}
+            >
               <Select
                 id={formId + '-slot'}
                 value={form.slotId}

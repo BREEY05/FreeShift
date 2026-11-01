@@ -14,9 +14,12 @@ export interface SemesterRow {
 
 export interface TemplateRow {
   id: number;
+  org_id?: number;
   name: string;
   description: string;
   is_preset: number;
+  /** 个人表的拥有者邮箱；NULL = 组织共享 / 预设 */
+  owner_email?: string | null;
   created_at: string;
   slot_count?: number;
   is_active?: number;
@@ -35,11 +38,16 @@ export interface SlotRow {
 
 export interface UserRow {
   id: number;
+  org_id?: number;
   name: string;
   color: string;
   note: string;
   is_active: number;
   sort_order: number;
+  email?: string | null;
+  template_id?: number | null;
+  /** 联表查询时带出的个人表模板名 */
+  template_name?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -72,6 +80,10 @@ export function mapSemester(row: SemesterRow): Semester {
   };
 }
 
+/**
+ * 列表/详情都需要的 4 个上下文字段默认值，由 templateService 按当前登录用户覆盖
+ * （isMine / isOrgTemplate / sameTypeAsOrg）。
+ */
 export function mapTemplate(row: TemplateRow): SlotTemplate {
   return {
     id: Number(row.id),
@@ -81,6 +93,10 @@ export function mapTemplate(row: TemplateRow): SlotTemplate {
     slotCount: Number(row.slot_count ?? 0),
     isActive: Number(row.is_active ?? 0) === 1,
     createdAt: row.created_at,
+    ownerEmail: row.owner_email ?? null,
+    isMine: false,
+    isOrgTemplate: false,
+    sameTypeAsOrg: false,
   };
 }
 
@@ -107,6 +123,9 @@ export function mapUser(row: UserRow): AppUser {
     sortOrder: Number(row.sort_order),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    email: row.email ?? null,
+    templateId: row.template_id === null || row.template_id === undefined ? null : Number(row.template_id),
+    templateName: row.template_name ?? null,
   };
 }
 

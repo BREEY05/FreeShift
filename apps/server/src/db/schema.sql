@@ -7,7 +7,9 @@ CREATE TABLE IF NOT EXISTS organization (
   name TEXT NOT NULL,
   code TEXT NOT NULL UNIQUE,
   owner_email TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  -- 组织确定的时间类型模板（创建组织时必选）
+  template_id INTEGER REFERENCES slot_template(id) ON DELETE SET NULL
 );
 CREATE TABLE IF NOT EXISTS org_member (
   org_id INTEGER NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
@@ -25,6 +27,8 @@ CREATE TABLE IF NOT EXISTS slot_template (
   name        TEXT    NOT NULL,
   description TEXT    NOT NULL DEFAULT '',
   is_preset   INTEGER NOT NULL DEFAULT 0 CHECK (is_preset IN (0, 1)),
+  -- NULL = 组织共享/内置预设；非空 = 某个成员自己的表
+  owner_email TEXT,
   created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   UNIQUE(org_id, name)
 );
@@ -65,6 +69,10 @@ CREATE TABLE IF NOT EXISTS app_user (
   note       TEXT    NOT NULL DEFAULT '',
   is_active  INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
   sort_order INTEGER NOT NULL DEFAULT 0,
+  -- 登录邮箱（组织内唯一）；历史遗留成员可能为 NULL
+  email      TEXT,
+  -- 该成员当前的个人表模板（缺省 = 组织模板，共享同一行）
+  template_id INTEGER REFERENCES slot_template(id) ON DELETE SET NULL,
   created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   updated_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   UNIQUE(org_id, name)

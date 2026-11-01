@@ -56,6 +56,9 @@ function validateSession(session: AuthSession): AuthSession {
 
 export const authApi = {
   async session(signal?: AbortSignal) { return validateSession(await request<AuthSession>('session', undefined, signal)); },
+  /** 契约 v3：授权名单内的邮箱直接登录，不再要求验证码 */
+  async login(email: string) { return validateSession(await request<AuthSession>('login', { email })); },
+  /** 保留验证码接口作为兜底（前端登录页不再使用） */
   sendCode(email: string) { return request<{ expiresIn: number; retryAfter: number }>('send-code', { email }); },
   async verify(email: string, code: string) { return validateSession(await request<AuthSession>('verify', { email, code })); },
   logout() { return request<unknown>('logout', {}); },

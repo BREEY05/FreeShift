@@ -25,7 +25,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       setSession(SIGNED_OUT);
       setChecking(false);
       setError('');
-      setNotice('登录已过期，请重新验证邮箱。');
+      setNotice('登录已过期，请重新输入邮箱。');
       queryClient.clear();
     };
     window.addEventListener('freeshift:unauthorized', expire);
@@ -56,7 +56,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       await authApi.logout();
       revision.current += 1;
       setSession(SIGNED_OUT);
-      setNotice('你已安全退出。再次登录时，请验证邮箱。');
+      setNotice('你已安全退出。再次登录时，输入邮箱即可进入。');
       queryClient.clear();
     } catch (err) {
       setError(err instanceof Error ? err.message : '退出失败，请重试。');

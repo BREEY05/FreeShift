@@ -1,5 +1,5 @@
-import { requireOrg } from '../services/orgContext.ts';
-import type { FastifyPluginAsync } from 'fastify';
+import { isAdminRequest, requireOrg } from '../services/orgContext.ts';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { buildWeeks } from '@freeshift/shared';
 import type { Semester, SemesterOverview, WeekInfo, WeekParity } from '@freeshift/shared';
@@ -31,6 +31,10 @@ const semesterInputSchema = z.object({
 });
 
 const semesterPatchSchema = semesterInputSchema.partial();
+
+function requireAdmin(request: FastifyRequest): void {
+  if (!isAdminRequest(request)) throw new AppError(403, 'FORBIDDEN', '需要管理员权限');
+}
 
 const semesterCreateSchema = semesterInputSchema.extend({
   activeTemplateId: z.number().int().positive('模板 ID 必须为正整数').nullable().optional(),
@@ -75,6 +79,7 @@ export const semesterRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.put('/', async (request) => {
+    requireAdmin(request);
     const patch = parseBody(semesterPatchSchema, request.body ?? {});
     const current = getActiveSemester(requireOrg(request));
 
@@ -104,6 +109,7 @@ export const semesterRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post('/', async (request, reply) => {
+    requireAdmin(request);
     const input = parseBody(semesterCreateSchema, request.body ?? {});
     const active = get<SemesterRow>('SELECT * FROM semester WHERE is_active = 1 AND org_id = ? LIMIT 1', [requireOrg(request)]);
     const templateId = input.activeTemplateId ?? (active ? (active.active_template_id === null ? null : Number(active.active_template_id)) : null);

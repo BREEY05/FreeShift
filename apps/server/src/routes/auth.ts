@@ -9,6 +9,7 @@ import {
   normalizeRole,
   removeAccount,
   revokeSession,
+  loginByEmail,
   sendCode,
   sessionAccount,
   SESSION_SECONDS,
@@ -26,7 +27,13 @@ export interface InstallAuthOptions {
 }
 const ROOT = '/api/v1/auth';
 const COOKIE = 'freeshift_session';
-const PUBLIC = new Set(['GET ' + ROOT + '/session', 'POST ' + ROOT + '/send-code', 'POST ' + ROOT + '/verify', 'POST ' + ROOT + '/logout']);
+const PUBLIC = new Set([
+  'GET ' + ROOT + '/session',
+  'POST ' + ROOT + '/login',
+  'POST ' + ROOT + '/send-code',
+  'POST ' + ROOT + '/verify',
+  'POST ' + ROOT + '/logout',
+]);
 function token(request: FastifyRequest): string | undefined {
   return request.headers.cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith(COOKIE + '='))?.slice(COOKIE.length + 1);
 }
@@ -93,6 +100,13 @@ export function installAuth(app: FastifyInstance, options: InstallAuthOptions = 
   app.get(ROOT + '/session', async (request) => {
     const account = current(request);
     return { data: { enabled, email: account?.email ?? null, role: account?.role ?? null } };
+  });
+  /** 授权邮箱直连登录：白名单内直接签发会话（无验证码）。 */
+  app.post(ROOT + '/login', async (request, reply) => {
+    if (!enabled) return { data: { enabled: false, email: null, role: null } };
+    const result = loginByEmail(body(request).email, now());
+    reply.header('Set-Cookie', cookie(result.token, SESSION_SECONDS));
+    return { data: { enabled: true, email: result.email, role: result.role } };
   });
   app.post(ROOT + '/send-code', async (request, reply) => {
     if (!enabled) return { data: { enabled: false, email: null, role: null } };

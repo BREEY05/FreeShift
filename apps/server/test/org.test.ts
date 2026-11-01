@@ -44,12 +44,12 @@ describe('organization tenancy',()=>{
     expect((await call(admin,'GET','/org')).json().error.code).toBe('NO_ORG');
     expect((await call(admin,'GET','/org/mine')).json().data).toMatchObject({orgs:[],activeOrgId:null,canCreate:true});
     // 普通成员不能创建组织
-    expect((await call(owner,'POST','/org',{name:'成员组织'})).json().error.code).toBe('VALIDATION_ERROR');
+    expect((await call(owner,'POST','/org',{name:'成员组织',presetName:'大学两节连排'})).json().error.code).toBe('FORBIDDEN');
     expect((await call(owner,'GET','/org/mine')).json().data.canCreate).toBe(false);
-    const a=await call(admin,'POST','/org',{name:'组织A'});expect(a.statusCode).toBe(201);const orgA=a.json().data.org;
+    const a=await call(admin,'POST','/org',{name:'组织A',presetName:'大学两节连排'});expect(a.statusCode).toBe(201);const orgA=a.json().data.org;
     expect(orgA.code).toMatch(/^[A-F0-9]{8}$/);
     expect(a.headers['set-cookie']).toContain('freeshift_org='+orgA.id);
-    const b=await call(admin,'POST','/org',{name:'组织B'});expect(b.statusCode).toBe(201);const orgB=b.json().data.org;
+    const b=await call(admin,'POST','/org',{name:'组织B',presetName:'大学两节连排'});expect(b.statusCode).toBe(201);const orgB=b.json().data.org;
     const mine=(await call(admin,'GET','/org/mine')).json().data;
     expect(mine.orgs.map((o:{org:{name:string};role:string})=>[o.org.name,o.role])).toEqual([['组织A','owner'],['组织B','owner']]);
     expect(mine.activeOrgId).toBe(orgB.id);
@@ -60,15 +60,17 @@ describe('organization tenancy',()=>{
     await call(admin,'POST','/org/switch',{orgId:orgB.id});
     const ub=(await call(admin,'POST','/users',{name:'同名用户'})).json().data.user;
     await call(admin,'POST','/org/switch',{orgId:orgA.id});
-    expect((await call(admin,'GET','/users')).json().data.users.map((u:{id:number})=>u.id)).toEqual([ua.id]);
+    const orgAUserIds=(await call(admin,'GET','/users')).json().data.users.map((u:{id:number})=>u.id);
+    expect(orgAUserIds).toContain(ua.id);
+    expect(orgAUserIds).not.toContain(ub.id);
     expect((await call(admin,'GET','/users/'+ub.id)).statusCode).toBe(404);
-    expect((await call(admin,'POST','/org/switch',{orgId:9999})).json().error.code).toBe('VALIDATION_ERROR');
+    expect((await call(admin,'POST','/org/switch',{orgId:9999})).json().error.code).toBe('FORBIDDEN');
     // 其他非成员也无法切换到别人的组织
-    expect((await call(owner,'POST','/org/switch',{orgId:orgA.id})).json().error.code).toBe('VALIDATION_ERROR');
+    expect((await call(owner,'POST','/org/switch',{orgId:orgA.id})).json().error.code).toBe('FORBIDDEN');
   });
   it('creates organizations, approves joins and isolates users templates schedules and semesters',async()=>{
     expect((await call(owner,'GET','/org')).json().error.code).toBe('NO_ORG');
-    const a=await call(admin,'POST','/org',{name:'组织A'});expect(a.statusCode).toBe(201);const orgA=a.json().data.org;
+    const a=await call(admin,'POST','/org',{name:'组织A',presetName:'大学两节连排'});expect(a.statusCode).toBe(201);const orgA=a.json().data.org;
     expect(orgA.code).toMatch(/^[A-F0-9]{8}$/);
     expect((await call(member,'POST','/org/join',{code:orgA.code})).json().data.status).toBe('pending');
     expect((await call(member,'GET','/users')).json().error.code).toBe('PENDING_APPROVAL');
@@ -89,14 +91,16 @@ describe('organization tenancy',()=>{
     // 已被移除的成员不再是管理员可管的对象，非创建者无法修改成员角色
     expect((await call(owner,'PATCH','/org/members/'+member,{role:'owner'})).json().error.code).toBe('FORBIDDEN');
     await call(member,'POST','/org/join',{code:orgA.code});await call(admin,'POST','/org/requests/'+member+'/approve',{});
-    const other2=(await call(admin,'POST','/org',{name:'组织B'})).json().data.org;
+    const other2=(await call(admin,'POST','/org',{name:'组织B',presetName:'大学两节连排'})).json().data.org;
     // 同名用户在另一个组织里可以独立存在
     await call(admin,'POST','/org/switch',{orgId:other2.id});
     const ub=(await call(admin,'POST','/users',{name:'同名用户'})).json().data.user;
     await call(admin,'POST','/org/switch',{orgId:orgA.id});
     const ua=(await call(admin,'POST','/users',{name:'同名用户'})).json().data.user;
     await call(admin,'POST','/org/switch',{orgId:orgA.id});
-    expect((await call(admin,'GET','/users')).json().data.users.map((u:{id:number})=>u.id)).toEqual([ua.id]);
+    const orgAUserIds=(await call(admin,'GET','/users')).json().data.users.map((u:{id:number})=>u.id);
+    expect(orgAUserIds).toContain(ua.id);
+    expect(orgAUserIds).not.toContain(ub.id);
     expect((await call(admin,'GET','/users/'+ub.id)).statusCode).toBe(404);
     expect((await call(admin,'PATCH','/users/'+ub.id,{name:'越权'})).statusCode).toBe(404);
     const tb=(await call(admin,'POST','/templates',{name:'私有模板'})).json().data.template;
@@ -107,14 +111,14 @@ describe('organization tenancy',()=>{
     expect(memberIds).toContain(tb.id);
     // 跨组织：另一个组织的成员看不到本组织模板
     const outsiderEmail='outsider@example.com';
-    await call(admin,'POST','/org',{name:'组织C'});
+    await call(admin,'POST','/org',{name:'组织C',presetName:'大学两节连排'});
     sessions[outsiderEmail]={token:token(outsiderEmail)};
     await call(admin,'POST','/org/switch',{orgId:orgA.id});
     expect((await call(outsiderEmail,'GET','/templates')).json().error.code).toBe('NO_ORG');
     // owner 已被提升为组织 A 管理员，跨组织访问改用组织外账号
     expect((await call(outsiderEmail,'GET','/templates/'+tb.id)).statusCode).toBe(404);
     expect((await call(outsiderEmail,'POST','/templates',{name:'非法克隆',cloneFrom:tb.id})).statusCode).toBe(404);
-    expect((await call(outsiderEmail,'POST','/semester',{name:'非法学期',startDate:'2026-09-01',totalWeeks:20,activeTemplateId:tb.id})).statusCode).toBe(404);
+    expect((await call(outsiderEmail,'POST','/semester',{name:'非法学期',startDate:'2026-09-01',totalWeeks:20,activeTemplateId:tb.id})).statusCode).toBe(403);
     const templates=(await call(admin,'GET','/templates')).json().data.templates;
     const active=templates.find((t:{isActive:boolean})=>t.isActive);
     const slots=(await call(admin,'GET','/templates/'+active.id)).json().data.slots;

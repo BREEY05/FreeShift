@@ -5,8 +5,12 @@ import type { CsvExport } from '../services/csvService.ts';
 import { buildBoardCsv, buildSchedulesCsv } from '../services/csvService.ts';
 import { resetOrgData } from '../services/dataResetService.ts';
 import { importSchedules } from '../services/importExportService.ts';
-import { requestEmail, requireOrg } from '../services/orgContext.ts';
+import { isAdminRequest, requestEmail, requireOrg } from '../services/orgContext.ts';
 import { canManage, listOrgs } from '../services/orgService.ts';
+
+function requireAdmin(request: FastifyRequest): void {
+  if (!isAdminRequest(request)) throw new AppError(403, 'FORBIDDEN', '需要管理员权限');
+}
 
 function sendCsv(reply: FastifyReply, exportFile: CsvExport) {
   return reply
@@ -17,6 +21,7 @@ function sendCsv(reply: FastifyReply, exportFile: CsvExport) {
 
 export const dataRoutes: FastifyPluginAsync = async (app) => {
   app.get('/export/schedules', async (request, reply) => {
+    requireAdmin(request);
     const query = request.query as Record<string, unknown>;
     const orgId = requireOrg(request);
     return sendCsv(
@@ -26,6 +31,7 @@ export const dataRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get('/export/board', async (request, reply) => {
+    requireAdmin(request);
     const query = request.query as Record<string, unknown>;
     // requireOrg 必须在 preHandler 之前执行：CSV 响应直接 send，不能再向外抛错
     const orgId = requireOrg(request);
@@ -33,6 +39,7 @@ export const dataRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post('/import/schedules', async (request) => {
+    requireAdmin(request);
     const body = request.body;
     if (typeof body !== 'string') {
       throw badRequest('请求体必须为 text/csv 文本');
@@ -44,6 +51,7 @@ export const dataRoutes: FastifyPluginAsync = async (app) => {
 
   /** 重置当前组织数据：清空 schedule / schedule_occurrence / app_user，保留 organization 与 org_member */
   const resetHandler = async (request: FastifyRequest) => {
+    requireAdmin(request);
     const orgId = requireOrg(request);
     const email = requestEmail(request);
     if (!canManage(orgId, email)) throw new AppError(403, 'FORBIDDEN', '仅组织负责人可重置数据');

@@ -2,9 +2,10 @@ import { z } from 'zod';
 import type { BatchScheduleResult, ConflictDetail, Parity, Schedule, Semester } from '@freeshift/shared';
 import { get, run, all, transaction, type SqlValue } from '../db/index.ts';
 import { AppError, notFound } from '../lib/errors.ts';
-import { mapSchedule, type ScheduleRow, type SlotRow } from '../lib/mappers.ts';
+import { mapSchedule, type ScheduleRow } from '../lib/mappers.ts';
 import { defaultOrgId, getActiveSemester, getSemesterById, getUserById } from './context.ts';
 import { assertNoConflicts, detectConflicts, rethrowUniqueConflict, type ConflictQuery } from './conflictService.ts';
+import { canonicalSlotId } from './tableService.ts';
 import { expandWeeks, insertOccurrences, removeOccurrences, type ScheduleKey } from './occurrence.ts';
 
 const weekdaySchema = z
@@ -98,9 +99,12 @@ function assertUserExists(userId: number, orgId = defaultOrgId()): void {
   getUserById(userId, orgId);
 }
 
-function assertSlotExists(slotId: number, orgId = defaultOrgId()): void {
-  const row = get<SlotRow>('SELECT ts.* FROM time_slot ts JOIN slot_template t ON t.id = ts.template_id WHERE ts.id = ? AND t.org_id = ?', [slotId, orgId]);
-  if (!row) throw notFound('时间段');
+/**
+ * 前端可能提交「个人表」的 slotId，这里统一映射为组织参考模板的 slotId 再落库
+ * （契约 2.1：schedule.slot_id 只存参考模板的时间段）。
+ */
+function canonicalSlot(slotId: number, orgId = defaultOrgId()): number {
+  return canonicalSlotId(orgId, slotId);
 }
 
 function loadScheduleRow(id: number, orgId = defaultOrgId()): ScheduleRow | undefined {
@@ -196,7 +200,7 @@ export function listSchedules(filters: ScheduleFilters = {}, orgId = defaultOrgI
 export function createSchedule(input: ScheduleInputParsed, orgId = defaultOrgId()): Schedule {
   const semester = getActiveSemester(orgId);
   assertUserExists(input.userId, orgId);
-  assertSlotExists(input.slotId, orgId);
+  const slotId = canonicalSlot(input.slotId, orgId);
   const parity = input.parity ?? 'all';
   assertWeekRange(input.startWeek, input.endWeek);
 
@@ -204,7 +208,7 @@ export function createSchedule(input: ScheduleInputParsed, orgId = defaultOrgId(
     semester,
     userId: input.userId,
     weekday: input.weekday,
-    slotIds: [input.slotId],
+    slotIds: [slotId],
     startWeek: input.startWeek,
     endWeek: input.endWeek,
     parity,
@@ -216,7 +220,7 @@ export function createSchedule(input: ScheduleInputParsed, orgId = defaultOrgId(
       const id = insertScheduleRecord(semester.id, {
         userId: input.userId,
         weekday: input.weekday,
-        slotId: input.slotId,
+        slotId,
         startWeek: input.startWeek,
         endWeek: input.endWeek,
         parity,
@@ -227,7 +231,7 @@ export function createSchedule(input: ScheduleInputParsed, orgId = defaultOrgId(
         semesterId: semester.id,
         userId: input.userId,
         weekday: input.weekday,
-        slotId: input.slotId,
+        slotId,
         startWeek: input.startWeek,
         endWeek: input.endWeek,
         parity,
@@ -246,14 +250,13 @@ export function updateSchedule(id: number, patch: SchedulePatchParsed, orgId = d
 
   const userId = patch.userId ?? Number(existing.user_id);
   const weekday = patch.weekday ?? Number(existing.weekday);
-  const slotId = patch.slotId ?? Number(existing.slot_id);
+  const slotId = patch.slotId !== undefined ? canonicalSlot(patch.slotId, orgId) : Number(existing.slot_id);
   const startWeek = patch.startWeek ?? Number(existing.start_week);
   const endWeek = patch.endWeek ?? Number(existing.end_week);
   const parity = patch.parity ?? existing.parity;
   const note = patch.note ?? existing.note;
 
   if (patch.userId !== undefined) assertUserExists(userId, orgId);
-  if (patch.slotId !== undefined) assertSlotExists(slotId, orgId);
   assertWeekRange(startWeek, endWeek);
 
   const conflictQuery: ConflictQuery = {
@@ -303,13 +306,13 @@ export function checkConflicts(input: ConflictCheckParsed, orgId = defaultOrgId(
   const semester = getActiveSemester(orgId);
   assertUserExists(input.userId, orgId);
   assertWeekRange(input.startWeek, input.endWeek);
-  for (const slotId of input.slotIds) assertSlotExists(slotId, orgId);
+  const slotIds = input.slotIds.map((slotId) => canonicalSlot(slotId, orgId));
   if (input.excludeScheduleId !== undefined) requireScheduleRow(input.excludeScheduleId, orgId);
   return detectConflicts({
     semester,
     userId: input.userId,
     weekday: input.weekday,
-    slotIds: input.slotIds,
+    slotIds,
     startWeek: input.startWeek,
     endWeek: input.endWeek,
     parity: input.parity ?? 'all',
@@ -328,11 +331,11 @@ export function batchCreateSchedules(input: BatchScheduleParsed, orgId = default
   const seen = new Set<string>();
   for (const cell of input.cells) {
     for (const slotId of cell.slotIds) {
-      const key = cell.weekday + ':' + slotId;
+      const canonical = canonicalSlot(slotId, orgId);
+      const key = cell.weekday + ':' + canonical;
       if (seen.has(key)) continue;
       seen.add(key);
-      assertSlotExists(slotId, orgId);
-      pairs.push({ weekday: cell.weekday, slotId });
+      pairs.push({ weekday: cell.weekday, slotId: canonical });
     }
   }
 

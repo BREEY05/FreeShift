@@ -22,9 +22,9 @@ export function requestEmail(request: FastifyRequest): string {
   return account.email;
 }
 
-/** 当前请求是否为平台管理员（离线模式恒为 false）。 */
+/** 当前请求是否为平台管理员（离线模式视为管理员，保留本机全部管理能力）。 */
 export function isAdminRequest(request: FastifyRequest): boolean {
-  if (process.env.AUTH_ENABLED === 'false') return false;
+  if (process.env.AUTH_ENABLED === 'false') return true;
   return sessionRole(cookieValue(request, 'freeshift_session') ?? '', Date.now()) === 'admin';
 }
 
