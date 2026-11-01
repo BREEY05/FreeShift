@@ -19,4 +19,5 @@ dist-local/
 .deploy-api/
 dist-release/
 dist-release-log.txt
+dist-local-log.txt
 .reltest*/
